@@ -1,190 +1,88 @@
-import numpy as np
 from pxr import Usd, UsdGeom, UsdPhysics, UsdShade, Sdf, Gf, Tf, PhysxSchema, Vt
-import omni.physx
 from omni.physx.scripts import particleUtils
 
+import omni.physx
+import numpy as np
 
-import dhart
+import dhart 
 import dhart.geometry
 import dhart.raytracer
 import dhart.graphgenerator
 
-
 class DhartInterface():
 
-    # Make some global class variables
-    active_selection = None
+    # Global class variable 
+    active_selection = None 
 
-
-    def __init__(self) -> None:
-
-        # Container for the selected prims to be used for dhart
-        self.selected_prims = None
-
-        # The bvh that will ultimately be used 
+    def __init__(self):
+        
+        # BVH for DHART
         self.bvh = None
 
-        self.stage = None
-
-        # The prim to use for the starting point
+        # Selected Starting Location
         self.start_prim = None
 
-
     def set_as_start(self):
+        ''' Sets the DhartInterface.active_selection to the start prim '''
         if DhartInterface.active_selection:
-            # TODO make sure this is length 1
             self.start_prim = DhartInterface.active_selection[0]
-        print(f'Starting Location is now: {self.start_prim}')
+            print(f'Starting Location is now: {self.start_prim}')
 
-    def set_as_mesh(self):
+            self.start_point = omni.usd.utils.get_world_transform_matrix(self.start_prim).ExtractTranslation()
+
+            print(f'Starting point is: {self.start_point}')
+
+    def set_as_bvh(self):
         if DhartInterface.active_selection:
-            prim_selections = []
+            prim = DhartInterface.active_selection[0]
 
-            for prim in DhartInterface.active_selection:
-                prim_type = prim.GetTypeName()
-                print(prim_type)
-                if prim_type == 'Mesh':
-                    prim_selections.append(prim)
+            prim_type = prim.GetTypeName()
 
-            if prim_selections:
-                self.selected_prims = prim_selections
-                self.convert_mesh()
-        print(f'Current meshes {self.selected_prims}')
+            if prim_type == 'Mesh':
+                self.convert_to_mesh(prim)
 
-    def scene_setup(self):
-        # Setup stage info and spheres
-        # Get stage.
-        self.stage = omni.usd.get_context().get_stage()
-
-        # Get default prim.
-        defaultPrim = self.stage.GetDefaultPrim()
-        self.defaultPrimPath = defaultPrim.GetPath().pathString
-
-        self.sphere_path = self.defaultPrimPath + '/spheres'
-
-    def graph(self):
-    # def graph(self, start, xy, height, max_nodes, upstep, downstep, upslope, downslope):
-        ''' Call DHART with the starting point and user params'''
+    def generate_graph(self):
+        ''' use dhart to generate a graph '''
 
         if not self.bvh:
-            print("no bvh")
+            print("No BVH")
             return 
 
-        # start_point = self.start_prim
-        # xform = UsdGeom.Xformable(self.start_prim)
-        start_point = omni.usd.utils.get_world_transform_matrix(self.start_prim).ExtractTranslation()
-        start_point = [start_point[0], start_point[1], start_point[2]]
-        spacing = (10, 10, 150)
-        max_nodes = 50000
+        self.scene_setup()
 
-        graph = dhart.graphgenerator.GenerateGraph(self.bvh, 
-                                                    start_point, 
-                                                    spacing, 
-                                                    max_nodes, 
+        spacing = (2, 2, 100)
+        max_nodes = 500
+
+        graph = dhart.graphgenerator.GenerateGraph(self.bvh,
+                                                    self.start_point,
+                                                    spacing,
+                                                    max_nodes,
                                                     up_step = 10,
                                                     down_step = 10,
                                                     up_slope = 40,
                                                     down_slope=40,
                                                     cores=-1)
-        # csr = graph.CompressToCSR()
-        nodes = graph.getNodes().array[['x','y','z']]
-
-        print(f"Got {len(nodes)} Nodes")
-
-        self.plot_nodes(nodes)
-        
-
-    def plot_nodes(self, nodes):
+        if graph:
+            nodes = graph.getNodes().array[['x','y','z']]
+            print(f'Got {len(nodes)} Nodes')
+        else:
+            print("FAILED")
+            return 
 
         self.create_geompoints(nodes.tolist())
 
-        # # Slow method
-        # for idx, node in enumerate(nodes):
-        #     x, y, z = node.tolist()
-
-        #     pos = Gf.Vec3f(x, y, z)
-
-        #     self.create_point(f'node_{idx}', pos, 2)
-
-    def cast_ray(self):
-        origins = [(0, 20, 0), (1, 10, 1), (0, 10, 1)]
-        directions = (0, -1, 0)
-
-        hit_points = dhart.raytracer.embree_raytracer.IntersectForPoint(self.bvh, origins, directions, -1)
-
-        print(hit_points)
-
-        return 
-
-    def set_active_mesh(self, prims):
-        ''' set prims to use for BVH '''
-        print("Set Active Mesh")
-        self.selected_prims = prims
-
-    def convert_mesh(self):
-        ''' convert a prim to a meshinfo object for dhart '''
-        #### Convert mesh/usd to meshinfo bvh 
-
-        print(f'PRIMMM {self.selected_prims} - prims')
-
-        for prim in self.selected_prims: 
-
-            # Get mesh name (prim name)
-            m = UsdGeom.Mesh(prim)
-
-            # Get verts and triangles
-            tris = m.GetFaceVertexIndicesAttr().Get()
-            verts = m.GetPointsAttr().Get()
-
-            # Get vertices as a list
-            tri_list = np.array(tris)
-            # tri_list = [x for x in tris]
-            # Convert to numpy array of vectors, then flatten
-            # vert_list = np.asarray([np.asarray(x) for x in verts]).flatten()
-            vert_list = np.array(verts).flatten()
-
-            # Insert into MeshInfo object
-            MI = dhart.geometry.MeshInfo(tri_list, vert_list, "TestMesh", 39)
-
-            self.bvh = dhart.raytracer.EmbreeBVH(MI)
-
-        print(f"converted mesh to BVH: {self.bvh} ")
-
-    def create_point(self, name : str, pos : Gf.Vec3f, radius : float):
-
-        prim = self.stage.GetPrimAtPath(self.sphere_path)
-        if prim.IsValid() == False:
-            UsdGeom.Xform.Define(self.stage, self.sphere_path)
-
-        spherePath = self.sphere_path + '/' + name
-        sphereGeom = UsdGeom.Sphere.Define(self.stage, spherePath)
-
-        # Set radius.
-        sphereGeom.CreateRadiusAttr(radius)
-
-        # Set color.
-        sphereGeom.CreateDisplayColorAttr([(1.0, 0.0, 0.0)])
-
-        # Set position.
-        UsdGeom.XformCommonAPI(sphereGeom).SetTranslate((pos[0], pos[1], pos[2]))
-
-    # def create_geompoints(self):
-    #     # def create_geompoints(self, nodes):
-    #     self.scene_setup()
-
-    #     pointsPrim = self.stage.GetPrimAtPath(self.sphere_path)
-    #     usdpoints = UsdGeom.Points(pointsPrim)
-
-    #     return 
+    def scene_setup(self):
+        # Get stage.
+        self.stage = omni.usd.get_context().get_stage()
 
     def create_geompoints(self, nodes):
-
+        
         particlePointsPath = Sdf.Path("/particles")
 
-        # No velocity is needed
+        # No velocity is needed 
         vels = [(0, 0, 0) for x in nodes]
-        # Nodes are all same size
-        node_sizes = [2.0 for x in nodes]
+        # Node sizes are all the same
+        node_sizes = [1.0 for x in nodes]
 
         particle_system_path = particleUtils.get_default_particle_system_path(self.stage)
 
@@ -199,8 +97,7 @@ class DhartInterface():
                                                                 fluid=False,
                                                                 particle_group=0,
                                                                 particle_mass=0.001,
-                                                                density=0.0,
-                                                            )
+                                                                density=0)
 
         prototypeStr = str(particlePointsPath) + "/particlePrototype0"
         gprim = UsdGeom.Sphere.Define(self.stage, Sdf.Path(prototypeStr))
@@ -209,3 +106,21 @@ class DhartInterface():
 
         return particles
 
+    def convert_to_mesh(self, prim):
+        ''' convert a prim to BVH '''
+
+        # Get mesh name (prim name)
+        m = UsdGeom.Mesh(prim)
+
+        # Get verts and triangles
+        tris = m.GetFaceVertexIndicesAttr().Get()
+        verts = m.GetPointsAttr().Get()
+
+        tri_list = np.array(tris)
+        vert_list = np.array(verts).flatten()
+
+        MI = dhart.geometry.MeshInfo(tri_list, vert_list, "testmesh", 0)
+
+        self.bvh = dhart.raytracer.EmbreeBVH(MI)
+
+        print(f'BVH is: {self.bvh}')
