@@ -2,21 +2,25 @@
 # Semantic Versionning is used: https://semver.org/
 version = "1.0.0"
 
+preview_image = "preview.jpg"
+
 # The title and description fields are primarily for displaying extension info in UI
-title = "Simple UI Extension Template"
-description="The simplest python extension example. Use it as a starting point for your extensions."
+title = "DHART for Omniverse"
+description="An omniverse extension for DHART using the python API."
 
 # Path (relative to the root) or content of readme markdown file for UI.
 readme  = "docs/README.md"
 
+icon = "icon.jpg"
+
 # URL of the extension source repository.
-repository = ""
+repository = "github.com/cadop/ov_dhart"
 
 # One of categories for UI.
-category = "Example"
+category = "Analysis"
 
 # Keywords for the extension
-keywords = ["kit", "example"]
+keywords = ["kit", "design","robotics"]
 
 
 # Use omni.ui to build simple UI

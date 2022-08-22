@@ -19,7 +19,7 @@ class DhartExtension(omni.ext.IExt):
         self.initialize()
 
     def show_window(self):
-        self._window = ui.Window("My Window", width=300, height=300)
+        self._window = ui.Window("DHART", width=300, height=300)
         with self._window.frame:
             with ui.VStack():
                 ui.Button("Set Start Position", clicked_fn=lambda: self.DI.set_as_start())
