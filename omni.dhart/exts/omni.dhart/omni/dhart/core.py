@@ -50,15 +50,15 @@ class DhartInterface():
 
         self.scene_setup()
 
-        spacing = (2, 2, 100)
-        max_nodes = 500
+        spacing = (10, 10, 100)
+        max_nodes = 25000
 
         graph = dhart.graphgenerator.GenerateGraph(self.bvh,
                                                     self.start_point,
                                                     spacing,
                                                     max_nodes,
-                                                    up_step = 10,
-                                                    down_step = 10,
+                                                    up_step = 20,
+                                                    down_step = 20,
                                                     up_slope = 40,
                                                     down_slope=40,
                                                     cores=-1)
@@ -77,34 +77,16 @@ class DhartInterface():
 
     def create_geompoints(self, nodes):
         
-        particlePointsPath = Sdf.Path("/particles")
+        stage = omni.usd.get_context().get_stage()
+        prim = UsdGeom.Points.Define(stage, "/World/Points")
+        prim.CreatePointsAttr(nodes)
+        width_attr = prim.CreateWidthsAttr()
+        width_attr.Set([4])
 
-        # No velocity is needed 
-        vels = [(0, 0, 0) for x in nodes]
-        # Node sizes are all the same
-        node_sizes = [1.0 for x in nodes]
-
-        particle_system_path = particleUtils.get_default_particle_system_path(self.stage)
-
-        particles = particleUtils.add_physx_particleset_points(
-                                                                self.stage,
-                                                                particlePointsPath,
-                                                                nodes,
-                                                                velocities_list=vels,
-                                                                widths_list=node_sizes,
-                                                                particle_system_path=particle_system_path,
-                                                                self_collision=False,
-                                                                fluid=False,
-                                                                particle_group=0,
-                                                                particle_mass=0.001,
-                                                                density=0)
-
-        prototypeStr = str(particlePointsPath) + "/particlePrototype0"
-        gprim = UsdGeom.Sphere.Define(self.stage, Sdf.Path(prototypeStr))
-        gprim.CreateDisplayColorAttr([(1.0, 1.0, 0.0)])
-        gprim.CreateRadiusAttr().Set(0.01)
-
-        return particles
+        prim.CreateDisplayColorAttr()
+        # For RTX renderers, this only works for UsdGeom.Tokens.constant
+        color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
+        color_primvar.Set([(1,0,0)])
 
     def convert_to_mesh(self, prim):
         ''' convert a prim to BVH '''
