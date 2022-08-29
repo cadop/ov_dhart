@@ -8,6 +8,7 @@ import dhart
 import dhart.geometry
 import dhart.raytracer
 import dhart.graphgenerator
+from dhart.pathfinding import DijkstraShortestPath
 
 class DhartInterface():
 
@@ -27,6 +28,14 @@ class DhartInterface():
 
     def set_as_start(self):
         ''' Sets the DhartInterface.active_selection to the start prim '''
+        self.start_point = self.get_selected_as_point()
+
+    def set_as_end(self):
+        ''' Sets the DhartInterface.active_selection to the start prim '''
+        self.end_point = self.get_selected_as_point()
+
+    def get_selected_as_point(self):
+        ''' Sets the DhartInterface.active_selection to the start prim '''
 
         # Get the current active selection of the stage
         self.stage = omni.usd.get_context().get_stage()
@@ -36,13 +45,10 @@ class DhartInterface():
         self._selection = self._usd_context.get_selection()
         selected_paths = self._selection.get_selected_prim_paths()
         # Expects a list, so take first selection
-        self.start_prim = [self.stage.GetPrimAtPath(x) for x in selected_paths][0]
+        prim = [self.stage.GetPrimAtPath(x) for x in selected_paths][0]
 
-        print(f'Starting Location is now: {self.start_prim}')
-
-        self.start_point = omni.usd.utils.get_world_transform_matrix(self.start_prim).ExtractTranslation()
-
-        print(f'Starting point is: {self.start_point}')
+        selected_point = omni.usd.utils.get_world_transform_matrix(prim).ExtractTranslation()
+        return selected_point
 
     def modify_start(self,x=None,y=None,z=None):
         if x:
@@ -69,7 +75,7 @@ class DhartInterface():
         spacing = (10, 10, 100)
         max_nodes = 25000
 
-        graph = dhart.graphgenerator.GenerateGraph(self.bvh,
+        self.graph = dhart.graphgenerator.GenerateGraph(self.bvh,
                                                     self.start_point,
                                                     spacing,
                                                     max_nodes,
@@ -78,14 +84,31 @@ class DhartInterface():
                                                     up_slope = 40,
                                                     down_slope=40,
                                                     cores=-1)
-        if graph:
-            nodes = graph.getNodes().array[['x','y','z']]
-            print(f'Got {len(nodes)} Nodes')
+        if self.graph:
+            self.nodes = self.graph.getNodes().array[['x','y','z']]
+            print(f'Got {len(self.nodes)} Nodes')
         else:
             print("FAILED")
             return 
 
-        self.create_geompoints(nodes.tolist())
+        self.create_geompoints(self.nodes.tolist())
+
+
+    def get_path(self):
+        ''' Get the shortest path by distance '''
+
+        # DHART requires passing the desired nodes (not the positions)
+        # So, we will allow users to select an arbitrary position and get the closest node ids to it
+
+        p_desired = np.array([self.start_point, self.end_point])
+        closest_nodes = self.graph.get_closest_nodes(p_desired)
+
+        path = DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1])
+        path_xyz = np.take(self.nodes[['x','y','z']], path['id'])
+
+        self.create_curve(path_xyz.tolist())
+
+        return 
 
     def scene_setup(self):
         # Get stage.
@@ -104,23 +127,28 @@ class DhartInterface():
         color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
         color_primvar.Set([(1,0,0)])
 
-    def create_curve(self):
+    def create_curve(self, nodes):
+        '''Create and draw a BasisCurve on the stage following the nodes'''
 
-        nodes = [[0,0,0],[10,10,10],[20,20,20]]
-        
         stage = omni.usd.get_context().get_stage()
-        prim = UsdGeom.BasisCurves.Define(stage, "/World/Curves")
+        prim = UsdGeom.BasisCurves.Define(stage, "/World/Path")
         prim.CreatePointsAttr(nodes)
 
+        curve_verts = prim.CreateCurveVertexCountsAttr()
+        curve_verts.Set([len(nodes)])
 
+        type_attr = prim.CreateTypeAttr()
+        type_attr.Set('linear')
+        type_attr = prim.GetTypeAttr().Get()
         width_attr = prim.CreateWidthsAttr()
-        width_attr.Set([4])
 
-        # prim.CreateDisplayColorAttr()
+        width_attr.Set([4 for x in range(len(nodes))])
+
         # # For RTX renderers, this only works for UsdGeom.Tokens.constant
-        # color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
-        # color_primvar.Set([(1,0,0)])
+        color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
+        color_primvar.Set([(0,1,0)])
 
+        return 
 
     def convert_to_mesh(self, prim):
         ''' convert a prim to BVH '''
