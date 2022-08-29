@@ -22,9 +22,15 @@ class DhartExtension(omni.ext.IExt):
         self._window = ui.Window("DHART", width=300, height=300)
         with self._window.frame:
             with ui.VStack():
-                ui.Button("Set Start Position", clicked_fn=lambda: self.DI.set_as_start())
+                with ui.HStack():
+                    ui.Button("Set Start Position", clicked_fn=lambda: self.DI.set_as_start())
+                    self.start_pos = ui.MultiIntField(0,0,0)
+                    # self.start_pos.model.add_value_changed_fn(lambda m : self.DI.modify_start(m.get_value_as_int()))
+
                 ui.Button("Set Mesh for BVH", clicked_fn=lambda: self.DI.set_as_bvh())
                 ui.Button("Generate Graph", clicked_fn=lambda: self.DI.generate_graph())
+
+                ui.Button("Make Curve", clicked_fn=lambda: self.DI.create_curve())
 
     def initialize(self):
         ''' Initialization and any setup needed '''

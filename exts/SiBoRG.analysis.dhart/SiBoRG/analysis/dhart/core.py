@@ -22,15 +22,31 @@ class DhartInterface():
         # Selected Starting Location
         self.start_prim = None
 
+        # Set 0 start
+        self.start_point = [0,0,0]
+
     def set_as_start(self):
         ''' Sets the DhartInterface.active_selection to the start prim '''
-        if DhartInterface.active_selection:
-            self.start_prim = DhartInterface.active_selection[0]
-            print(f'Starting Location is now: {self.start_prim}')
 
-            self.start_point = omni.usd.utils.get_world_transform_matrix(self.start_prim).ExtractTranslation()
+        # Get the current active selection of the stage
+        self.stage = omni.usd.get_context().get_stage()
 
-            print(f'Starting point is: {self.start_point}')
+        # Get the selections from the stage
+        self._usd_context = omni.usd.get_context()
+        self._selection = self._usd_context.get_selection()
+        selected_paths = self._selection.get_selected_prim_paths()
+        # Expects a list, so take first selection
+        self.start_prim = [self.stage.GetPrimAtPath(x) for x in selected_paths][0]
+
+        print(f'Starting Location is now: {self.start_prim}')
+
+        self.start_point = omni.usd.utils.get_world_transform_matrix(self.start_prim).ExtractTranslation()
+
+        print(f'Starting point is: {self.start_point}')
+
+    def modify_start(self,x=None,y=None,z=None):
+        if x:
+            self.start_point[0] = x 
 
     def set_as_bvh(self):
         if DhartInterface.active_selection:
@@ -87,6 +103,24 @@ class DhartInterface():
         # For RTX renderers, this only works for UsdGeom.Tokens.constant
         color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
         color_primvar.Set([(1,0,0)])
+
+    def create_curve(self):
+
+        nodes = [[0,0,0],[10,10,10],[20,20,20]]
+        
+        stage = omni.usd.get_context().get_stage()
+        prim = UsdGeom.BasisCurves.Define(stage, "/World/Curves")
+        prim.CreatePointsAttr(nodes)
+
+
+        width_attr = prim.CreateWidthsAttr()
+        width_attr.Set([4])
+
+        # prim.CreateDisplayColorAttr()
+        # # For RTX renderers, this only works for UsdGeom.Tokens.constant
+        # color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
+        # color_primvar.Set([(1,0,0)])
+
 
     def convert_to_mesh(self, prim):
         ''' convert a prim to BVH '''
