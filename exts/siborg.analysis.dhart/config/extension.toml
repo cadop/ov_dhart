@@ -30,7 +30,7 @@ keywords = ["kit", "design","robotics"]
 
 # Main python module this extension provides, it will be publicly available as "import SiBoRG.analysis.dhart".
 [[python.module]]
-name = "SiBoRG.analysis.dhart"
+name = "siborg.analysis.dhart"
 
 
 [python.pipapi]
