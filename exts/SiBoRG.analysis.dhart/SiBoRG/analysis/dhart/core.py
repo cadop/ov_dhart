@@ -26,13 +26,29 @@ class DhartInterface():
         # Set 0 start
         self.start_point = [0,0,0]
 
+        # Set max nodes
+        self.max_nodes = 500
+
+        self.grid_spacing = [1,1]
+        self.height = 10
+
+        # Track 
+        self.gui_start = []
+        self.gui_end = []
+
     def set_as_start(self):
         ''' Sets the DhartInterface.active_selection to the start prim '''
         self.start_point = self.get_selected_as_point()
+        self.gui_start[0].model.set_value(self.start_point[0])
+        self.gui_start[1].model.set_value(self.start_point[1])
+        self.gui_start[2].model.set_value(self.start_point[2])
 
     def set_as_end(self):
-        ''' Sets the DhartInterface.active_selection to the start prim '''
+        ''' Sets the DhartInterface.active_selection to the end prim '''
         self.end_point = self.get_selected_as_point()
+        self.gui_end[0].model.set_value(self.end_point[0])
+        self.gui_end[1].model.set_value(self.end_point[1])
+        self.gui_end[2].model.set_value(self.end_point[2])
 
     def get_selected_as_point(self):
         ''' Sets the DhartInterface.active_selection to the start prim '''
@@ -51,8 +67,18 @@ class DhartInterface():
         return selected_point
 
     def modify_start(self,x=None,y=None,z=None):
-        if x:
-            self.start_point[0] = x 
+        if x: self.start_point[0] = x 
+        if y: self.start_point[1] = y
+        if z: self.start_point[2] = z 
+
+        print(f'START IS: {self.start_point}')
+
+    def modify_end(self,x=None,y=None,z=None):
+        if x: self.end_point[0] = x 
+        if y: self.end_point[1] = y
+        if z: self.end_point[2] = z 
+        
+        print(f'END IS: {self.end_point}')
 
     def set_as_bvh(self):
         if DhartInterface.active_selection:
@@ -63,6 +89,15 @@ class DhartInterface():
             if prim_type == 'Mesh':
                 self.convert_to_mesh(prim)
 
+    def set_max_nodes(self, m):
+        self.max_nodes = m
+
+    def set_spacing(self, xy):
+        self.grid_spacing = xy
+
+    def set_height(self, z):
+        self.height = z
+
     def generate_graph(self):
         ''' use dhart to generate a graph '''
 
@@ -72,8 +107,8 @@ class DhartInterface():
 
         self.scene_setup()
 
-        spacing = (10, 10, 100)
-        max_nodes = 25000
+        spacing = (self.grid_spacing[0], self.grid_spacing[1], self.height)
+        max_nodes = self.max_nodes
 
         self.graph = dhart.graphgenerator.GenerateGraph(self.bvh,
                                                     self.start_point,
@@ -134,17 +169,18 @@ class DhartInterface():
         prim = UsdGeom.BasisCurves.Define(stage, "/World/Path")
         prim.CreatePointsAttr(nodes)
 
+        # Set the number of curve verts to be the same as the number of points we have
         curve_verts = prim.CreateCurveVertexCountsAttr()
         curve_verts.Set([len(nodes)])
 
+        # Set the curve type to linear so that each node is connected to the next
         type_attr = prim.CreateTypeAttr()
         type_attr.Set('linear')
         type_attr = prim.GetTypeAttr().Get()
+        # Set the width of the curve
         width_attr = prim.CreateWidthsAttr()
-
         width_attr.Set([4 for x in range(len(nodes))])
 
-        # # For RTX renderers, this only works for UsdGeom.Tokens.constant
         color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
         color_primvar.Set([(0,1,0)])
 
