@@ -1,7 +1,5 @@
 import omni.ext
 import omni.ui as ui
-from omni.kit.property.transform.scripts.transform_builder import TransformWidgets
-from pxr import Sdf
 
 from . import core
 from . import render
