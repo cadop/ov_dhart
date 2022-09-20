@@ -1,5 +1,4 @@
 from pxr import Usd, UsdGeom, UsdPhysics, UsdShade, Sdf, Gf, Tf, PhysxSchema, Vt
-from omni.physx.scripts import particleUtils
 
 import omni.physx
 import numpy as np
@@ -9,6 +8,7 @@ import dhart.geometry
 import dhart.raytracer
 import dhart.graphgenerator
 from dhart.pathfinding import DijkstraShortestPath
+
 
 class DhartInterface():
 
@@ -82,18 +82,30 @@ class DhartInterface():
 
     def set_as_bvh(self):
         if DhartInterface.active_selection:
-            prim = DhartInterface.active_selection[0]
+            # Record if a BVH was generated
+            made_bvh = False
+            
+            # prim = DhartInterface.active_selection[0]
+            for prim in DhartInterface.active_selection:
+        
+                prim_type = prim.GetTypeName()
+                # Only add if its a mesh
+                if prim_type == 'Mesh':
+                    MI = self.convert_to_mesh(prim)
+                    if not made_bvh:
+                        self.bvh = dhart.raytracer.EmbreeBVH(MI)
+                        made_bvh = True 
+                        print(f'BVH is: {self.bvh}')
+                    else:
+                        self.bvh.AddMesh(MI)
+                        print('Added to BVH')
 
-            prim_type = prim.GetTypeName()
-
-            if prim_type == 'Mesh':
-                self.convert_to_mesh(prim)
 
     def set_max_nodes(self, m):
         self.max_nodes = m
 
     def set_spacing(self, xy):
-        self.grid_spacing = xy
+        self.grid_spacing = [xy,xy]
 
     def set_height(self, z):
         self.height = z
@@ -194,13 +206,45 @@ class DhartInterface():
 
         # Get verts and triangles
         tris = m.GetFaceVertexIndicesAttr().Get()
+
+        tris_cnt = m.GetFaceVertexCountsAttr().Get()
+
         verts = m.GetPointsAttr().Get()
 
         tri_list = np.array(tris)
-        vert_list = np.array(verts).flatten()
+        vert_list = np.array(verts)
+
+        # Apply any transforms to USD points 
+        world_transform: Gf.Matrix4d = omni.usd.get_world_transform_matrix(prim)
+        rotmat = world_transform.ExtractRotationMatrix()
+        trans = world_transform.ExtractTranslation()
+        vert_rotated = np.dot(vert_list, rotmat) # Rotate points
+
+        trans = np.array(trans).reshape(1,3)
+        vert_translated = vert_rotated + trans
+        vert_list = vert_translated.flatten()
+
+        # Check if the face counts are 4, if so, reshape and turn to triangles
+        if tris_cnt[0] == 4:
+            quad_list = tri_list.reshape(-1,4)
+            tri_list = quad_to_tri(quad_list)
+            tri_list = tri_list.flatten()
 
         MI = dhart.geometry.MeshInfo(tri_list, vert_list, "testmesh", 0)
 
-        self.bvh = dhart.raytracer.EmbreeBVH(MI)
+        return MI 
 
-        print(f'BVH is: {self.bvh}')
+def quad_to_tri(a):
+    idx = np.flatnonzero(a[:,-1] == 0)
+    out0 = np.empty((a.shape[0],2,3),dtype=a.dtype)      
+
+    out0[:,0,1:] = a[:,1:-1]
+    out0[:,1,1:] = a[:,2:]
+
+    out0[...,0] = a[:,0,None]
+
+    out0.shape = (-1,3)
+
+    mask = np.ones(out0.shape[0],dtype=bool)
+    mask[idx*2+1] = 0
+    return out0[mask]
