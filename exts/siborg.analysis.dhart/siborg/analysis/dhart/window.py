@@ -45,8 +45,9 @@ def populate_window(DI, render):
 
             ui.Button("Set Mesh for BVH", clicked_fn=lambda: DI.set_as_bvh(), height=50)
             ui.Button("Generate Graph", clicked_fn=lambda: DI.generate_graph(), height=50)
-            ui.Button("Visibility Graph", clicked_fn=lambda: DI.visibility_graph(), height=50)
-            ui.Button("Visibility Graph to Points", clicked_fn=lambda: DI.visibility_graph_groups(), height=50)
+            with ui.HStack(height=5):
+                ui.Button("Visibility Graph", clicked_fn=lambda: DI.visibility_graph(), height=50)
+                ui.Button("Visibility Graph to Points", clicked_fn=lambda: DI.visibility_graph_groups(), height=50)
             ui.Button("Find Path", clicked_fn=lambda: DI.get_path(), height=50)
             ui.Button("Set Camera on Path", clicked_fn=lambda: render.assign_camera(), height=30)
 

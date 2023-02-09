@@ -28,6 +28,7 @@ class DhartInterface():
         self.start_prim = None
         
         self.node_size = 0.1
+        self.path_size = 0.3
 
         # Set 0 start
         self.start_point = [0,0,0]
@@ -36,9 +37,11 @@ class DhartInterface():
         self.max_nodes = 500
 
         self.grid_spacing = [.1,.1]
-        self.height = 10
+        self.height = .1
 
-        self.goal_prim_path = '/World/TargetNodes'
+        self.targ_vis_path = '/World/TargetNodes'
+        self.path_start_path = '/World/StartPath'
+        self.path_end_path = '/World/EndPath'
 
         # Track 
         self.gui_start = []
@@ -160,7 +163,7 @@ class DhartInterface():
 
     def get_to_nodes(self):
 
-        parent_prim =  self.stage.GetPrimAtPath(self.goal_prim_path)
+        parent_prim =  self.stage.GetPrimAtPath(self.targ_vis_path)
         children = parent_prim.GetAllChildren()
         b_nodes = []
         for child in children:
@@ -205,27 +208,16 @@ class DhartInterface():
 
     def score_vg(self, scores):
 
-        bin_num = 50
-
         start_t = time.time()
-
-        score_vals = set(scores)
-
-        bins = np.linspace(np.min(scores), np.max(scores), num=bin_num)
-        bin_scores = np.digitize(scores,bins,right=True)
-
-        # Check if we can make enough bins, if not, remake bins
-        if len(set(bin_scores)) < bin_num:
-            bins = np.linspace(np.min(scores), np.max(scores), num=len(set(bin_scores)))
-            bin_scores = np.digitize(scores,bins,right=True)
-
-        bin_indices = [np.where(bin_scores == i)[0] for i in range(1, len(bins))]
-        bin_averages = [np.mean(scores[idx],dtype=int) for idx in bin_indices]
         scores = np.asarray(scores)
 
-        for idx in range(len(bin_averages)):
-            scores[bin_indices[idx]] = bin_averages[idx]
+        bin_edges = np.histogram_bin_edges(scores, bins='auto')
+        digitized = np.digitize(scores, bin_edges)-1
+        idx_bins = np.unique(digitized)
 
+        for idx in idx_bins:
+            ind = np.where(digitized == idx)
+            scores[ind] = bin_edges[idx]
         scores = np.asarray(scores)
 
         print(f'Bin time = {time.time()-start_t}')
@@ -236,7 +228,7 @@ class DhartInterface():
         print(f'color time = {time.time()-start_t}')
         start_t = time.time()
 
-        self.create_colored_geompoints(self.nodes.tolist(), bin_indices, colors)
+        self.create_colored_geompoints(self.nodes.tolist(), colors)
 
         print(f'End time = {time.time()-start_t}')
 
@@ -246,6 +238,12 @@ class DhartInterface():
         # DHART requires passing the desired nodes (not the positions)
         # So, we will allow users to select an arbitrary position and get the closest node ids to it
 
+        s_prim =  self.stage.GetPrimAtPath(self.path_start_path)
+        self.start_point = omni.usd.utils.get_world_transform_matrix(s_prim).ExtractTranslation()
+        e_prim =  self.stage.GetPrimAtPath(self.path_end_path)
+        self.end_point = omni.usd.utils.get_world_transform_matrix(e_prim).ExtractTranslation()
+
+
         p_desired = np.array([self.start_point, self.end_point])
         closest_nodes = self.graph.get_closest_nodes(p_desired)
 
@@ -254,7 +252,7 @@ class DhartInterface():
 
         self.create_curve(path_xyz.tolist())
 
-        return 
+        return
 
     def scene_setup(self):
         # Get stage.
@@ -274,7 +272,7 @@ class DhartInterface():
         color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
         color_primvar.Set([(1,0,0)])
 
-    def create_colored_geompoints(self, nodes, bins, colors=None):
+    def create_colored_geompoints(self, nodes, colors=None):
         '''Create a set of geom points given some input number of nodes and colors
 
         Parameters
@@ -344,8 +342,9 @@ class DhartInterface():
         type_attr.Set('linear')
         type_attr = prim.GetTypeAttr().Get()
         # Set the width of the curve
-        width_attr = prim.CreateWidthsAttr(UsdGeom.Tokens.varying )
-        width_attr.Set([4 for x in range(len(nodes))])
+        width_attr = prim.CreateWidthsAttr()
+        # width_attr = prim.CreateWidthsAttr(UsdGeom.Tokens.varying)
+        width_attr.Set([self.path_size for x in range(len(nodes))])
 
         color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
         color_primvar.Set([(0,1,0)])
@@ -456,7 +455,7 @@ def quad_to_tri(a):
 
 def calc_colors(scores):
     Colors = []
-    filtered_scores = [score for score in scores if score>0]
+    filtered_scores = [score for score in scores if score>=0]
     max_v = max(filtered_scores)
     min_v = min(filtered_scores)
     print('maxmin')
