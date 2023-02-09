@@ -8,7 +8,11 @@ import dhart.geometry
 import dhart.raytracer
 import dhart.graphgenerator
 from dhart.pathfinding import DijkstraShortestPath
+from dhart.visibilitygraph import VisibilityGraphAllToAll
+from dhart.visibilitygraph import VisibilityGraphUndirectedAllToAll
+from dhart.visibilitygraph import VisibilityGraphGroupToGroup
 
+import time
 
 class DhartInterface():
 
@@ -22,6 +26,8 @@ class DhartInterface():
 
         # Selected Starting Location
         self.start_prim = None
+        
+        self.node_size = 0.1
 
         # Set 0 start
         self.start_point = [0,0,0]
@@ -29,8 +35,10 @@ class DhartInterface():
         # Set max nodes
         self.max_nodes = 500
 
-        self.grid_spacing = [1,1]
+        self.grid_spacing = [.1,.1]
         self.height = 10
+
+        self.goal_prim_path = '/World/TargetNodes'
 
         # Track 
         self.gui_start = []
@@ -81,24 +89,33 @@ class DhartInterface():
         print(f'END IS: {self.end_point}')
 
     def set_as_bvh(self):
-        if DhartInterface.active_selection:
-            # Record if a BVH was generated
-            made_bvh = False
-            
-            # prim = DhartInterface.active_selection[0]
-            for prim in DhartInterface.active_selection:
-        
-                prim_type = prim.GetTypeName()
-                # Only add if its a mesh
-                if prim_type == 'Mesh':
-                    MI = self.convert_to_mesh(prim)
-                    if not made_bvh:
-                        self.bvh = dhart.raytracer.EmbreeBVH(MI)
-                        made_bvh = True 
-                        print(f'BVH is: {self.bvh}')
-                    else:
-                        self.bvh.AddMesh(MI)
-                        print('Added to BVH')
+
+        # Get the current active selection of the stage
+        self.stage = omni.usd.get_context().get_stage()
+
+        # Get the selections from the stage
+        self._usd_context = omni.usd.get_context()
+        self._selection = self._usd_context.get_selection()
+        selected_paths = self._selection.get_selected_prim_paths()
+        # Expects a list, so take first selection
+        prims = [self.stage.GetPrimAtPath(x) for x in selected_paths]
+
+        # Record if a BVH was generated
+        made_bvh = False
+
+        for prim in prims:
+    
+            prim_type = prim.GetTypeName()
+            # Only add if its a mesh
+            if prim_type == 'Mesh':
+                MI = self.convert_to_mesh(prim)
+                if not made_bvh:
+                    self.bvh = dhart.raytracer.EmbreeBVH(MI)
+                    made_bvh = True 
+                    print(f'BVH is: {self.bvh}')
+                else:
+                    self.bvh.AddMesh(MI)
+                    print('Added to BVH')
 
 
     def set_max_nodes(self, m):
@@ -126,10 +143,10 @@ class DhartInterface():
                                                     self.start_point,
                                                     spacing,
                                                     max_nodes,
-                                                    up_step = 20,
-                                                    down_step = 20,
-                                                    up_slope = 40,
-                                                    down_slope=40,
+                                                    up_step = 30,
+                                                    down_step = 30,
+                                                    up_slope = 10,
+                                                    down_slope=10,
                                                     cores=-1)
         if self.graph:
             self.nodes = self.graph.getNodes().array[['x','y','z']]
@@ -139,7 +156,89 @@ class DhartInterface():
             return 
 
         self.create_geompoints(self.nodes.tolist())
+        # self.create_colored_geompoints(self.nodes.tolist())
 
+    def get_to_nodes(self):
+
+        parent_prim =  self.stage.GetPrimAtPath(self.goal_prim_path)
+        children = parent_prim.GetAllChildren()
+        b_nodes = []
+        for child in children:
+            t = omni.usd.utils.get_world_transform_matrix(child).ExtractTranslation()
+            b_nodes.append(np.asarray(t))
+
+        return b_nodes
+
+    def visibility_graph_groups(self):
+
+        start_t = time.time()
+
+        nodes_a = self.nodes # Define points as the graph nodes
+        
+        nodes_b = self.get_to_nodes()
+
+        VG = VisibilityGraphGroupToGroup(self.bvh, nodes_a, nodes_b, self.height) # Calculate the visibility graph
+        if VG is None: return 
+        # visibility_graph = VG.CompressToCSR() # Convert to a CSR (matrix)
+        scores = VG.AggregateEdgeCosts(2, True) # Aggregate the visibility graph scores
+        scores = scores[:-len(nodes_b)] # remove b nodes
+        print(f'VG group time = {time.time()-start_t}')
+
+        self.score_vg(scores)
+
+    def visibility_graph(self):
+
+        start_t = time.time()
+
+        # height = 10 # Set a height offset to cast rays from the points
+        points = self.graph.getNodes() # Define points as the graph nodes
+        
+        VG = VisibilityGraphUndirectedAllToAll(self.bvh, points, self.height) # Calculate the visibility graph
+        # VG = VisibilityGraphAllToAll(self.bvh, points, self.height) # Calculate the visibility graph
+        
+        # visibility_graph = VG.CompressToCSR() # Convert to a CSR (matrix)
+        scores = VG.AggregateEdgeCosts(2, True) # Aggregate the visibility graph scores
+
+        print(f'VG time = {time.time()-start_t}')
+
+        self.score_vg(scores)
+
+    def score_vg(self, scores):
+
+        bin_num = 50
+
+        start_t = time.time()
+
+        score_vals = set(scores)
+
+        bins = np.linspace(np.min(scores), np.max(scores), num=bin_num)
+        bin_scores = np.digitize(scores,bins,right=True)
+
+        # Check if we can make enough bins, if not, remake bins
+        if len(set(bin_scores)) < bin_num:
+            bins = np.linspace(np.min(scores), np.max(scores), num=len(set(bin_scores)))
+            bin_scores = np.digitize(scores,bins,right=True)
+
+        bin_indices = [np.where(bin_scores == i)[0] for i in range(1, len(bins))]
+        bin_averages = [np.mean(scores[idx],dtype=int) for idx in bin_indices]
+        scores = np.asarray(scores)
+
+        for idx in range(len(bin_averages)):
+            scores[bin_indices[idx]] = bin_averages[idx]
+
+        scores = np.asarray(scores)
+
+        print(f'Bin time = {time.time()-start_t}')
+        start_t = time.time()
+
+        colors = calc_colors(scores)
+
+        print(f'color time = {time.time()-start_t}')
+        start_t = time.time()
+
+        self.create_colored_geompoints(self.nodes.tolist(), bin_indices, colors)
+
+        print(f'End time = {time.time()-start_t}')
 
     def get_path(self):
         ''' Get the shortest path by distance '''
@@ -164,15 +263,70 @@ class DhartInterface():
     def create_geompoints(self, nodes):
         
         stage = omni.usd.get_context().get_stage()
-        prim = UsdGeom.Points.Define(stage, "/World/Points")
+        prim = UsdGeom.Points.Define(stage, "/World/Nodes/Points")
         prim.CreatePointsAttr(nodes)
         width_attr = prim.CreateWidthsAttr()
-        width_attr.Set([4])
+        width_attr.Set([self.node_size])
 
-        prim.CreateDisplayColorAttr()
+        # prim.CreateDisplayColorAttr()
         # For RTX renderers, this only works for UsdGeom.Tokens.constant
+
         color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
         color_primvar.Set([(1,0,0)])
+
+    def create_colored_geompoints(self, nodes, bins, colors=None):
+        '''Create a set of geom points given some input number of nodes and colors
+
+        Parameters
+        ----------
+        nodes : _type_
+            _description_
+        '''
+        stage = omni.usd.get_context().get_stage()
+        nodes = np.asarray(nodes)
+        colors = np.asarray(colors)
+
+        # Get indices of nodes that align with similar colors
+
+        # Create a set of colors (unique elements)
+        unique, color_set = np.unique(colors, axis=0, return_index=True)
+        # Go through each color 
+        # for color in color_set:
+        #     idx = np.where(nodes == colors[color])
+        #     # pull out
+
+        # Split colors into bins, and use the indices of the bins to split spheres
+
+        bin_nodes = nodes
+        # bin_color = np.asarray([1,0,0])
+
+        for i, color in enumerate(color_set):
+            c_val =  colors[color]
+            c_idx = np.where(nodes ==c_val)
+            t =nodes[:,0]==c_val[0]
+            condition = (colors[:,0]==c_val[0]) & (colors[:,1]==c_val[1]) & (colors[:,2]==c_val[2])
+            c_idx = np.where(condition)
+
+            if len(c_idx) == 0: continue
+
+            node_set = np.asarray(nodes[c_idx])
+
+            # Create a new points definition based on the number of bins
+            prim = UsdGeom.Points.Define(stage, f"/World/Nodes/Points_{i}")
+            prim.CreatePointsAttr(node_set)
+            width_attr = prim.CreateWidthsAttr()
+            width_attr.Set([self.node_size])
+
+            # prim.CreateDisplayColorAttr()
+            # For RTX renderers, this only works for UsdGeom.Tokens.constant
+
+            # bin_color = np.random.randint(0,2,3)
+            # These should all be the same value
+            # bin_color = colors[idx]
+            # bin_color = np.asarray(bin_color)
+            color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
+            color_primvar.Set(c_val)
+
 
     def create_curve(self, nodes):
         '''Create and draw a BasisCurve on the stage following the nodes'''
@@ -190,7 +344,7 @@ class DhartInterface():
         type_attr.Set('linear')
         type_attr = prim.GetTypeAttr().Get()
         # Set the width of the curve
-        width_attr = prim.CreateWidthsAttr()
+        width_attr = prim.CreateWidthsAttr(UsdGeom.Tokens.varying )
         width_attr.Set([4 for x in range(len(nodes))])
 
         color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
@@ -214,14 +368,23 @@ class DhartInterface():
         tri_list = np.array(tris)
         vert_list = np.array(verts)
 
-        # Apply any transforms to USD points 
-        world_transform: Gf.Matrix4d = omni.usd.get_world_transform_matrix(prim)
-        rotmat = world_transform.ExtractRotationMatrix()
-        trans = world_transform.ExtractTranslation()
-        vert_rotated = np.dot(vert_list, rotmat) # Rotate points
+        xform = UsdGeom.Xformable(prim)
+        time = Usd.TimeCode.Default() # The time at which we compute the bounding box
+        world_transform: Gf.Matrix4d = xform.ComputeLocalToWorldTransform(time)
+        translation: Gf.Vec3d = world_transform.ExtractTranslation()
+        rotation: Gf.Rotation = world_transform.ExtractRotationMatrix()
+        scale: Gf.Vec3d = Gf.Vec3d(*(v.GetLength() for v in world_transform.ExtractRotationMatrix()))
 
-        trans = np.array(trans).reshape(1,3)
-        vert_translated = vert_rotated + trans
+        vert_rotated = np.dot(vert_list, rotation) # Rotate points
+
+        vert_translated = vert_rotated + translation
+
+        vert_scaled = vert_translated
+        vert_scaled[:,0] *= scale[0]
+        vert_scaled[:,1] *= scale[1]
+        vert_scaled[:,2] *= scale[2]
+
+        vert_list = vert_scaled
         vert_list = vert_translated.flatten()
 
         # Check if the face counts are 4, if so, reshape and turn to triangles
@@ -230,9 +393,50 @@ class DhartInterface():
             tri_list = quad_to_tri(quad_list)
             tri_list = tri_list.flatten()
 
-        MI = dhart.geometry.MeshInfo(tri_list, vert_list, "testmesh", 0)
+        try:
+            MI = dhart.geometry.MeshInfo(tri_list, vert_list, "testmesh", 0)
+            return MI 
+        except:
+            print(prim)
+        return None
 
-        return MI 
+    # def convert_to_mesh(self, prim):
+    #     ''' convert a prim to BVH '''
+
+    #     # Get mesh name (prim name)
+    #     m = UsdGeom.Mesh(prim)
+
+    #     # Get verts and triangles
+    #     tris = m.GetFaceVertexIndicesAttr().Get()
+
+    #     tris_cnt = m.GetFaceVertexCountsAttr().Get()
+
+    #     verts = m.GetPointsAttr().Get()
+
+    #     tri_list = np.array(tris)
+    #     vert_list = np.array(verts)
+
+    #     # Apply any transforms to USD points 
+    #     world_transform: Gf.Matrix4d = omni.usd.get_world_transform_matrix(prim)
+    #     rotmat = world_transform.ExtractRotationMatrix()
+    #     trans = world_transform.ExtractTranslation()
+    #     vert_rotated = np.dot(vert_list, rotmat) # Rotate points
+
+    #     # trans = np.array(trans).reshape(1,3)
+    #     vert_translated = vert_rotated + trans
+    #     vert_list = vert_translated.flatten()
+
+    #     # Check if the face counts are 4, if so, reshape and turn to triangles
+    #     if tris_cnt[0] == 4:
+    #         quad_list = tri_list.reshape(-1,4)
+    #         tri_list = quad_to_tri(quad_list)
+    #         tri_list = tri_list.flatten()
+
+    #     try:
+    #         MI = dhart.geometry.MeshInfo(tri_list, vert_list, "testmesh", 0)
+    #     except:
+    #         print(prim)
+    #     return MI 
 
 def quad_to_tri(a):
     idx = np.flatnonzero(a[:,-1] == 0)
@@ -248,3 +452,36 @@ def quad_to_tri(a):
     mask = np.ones(out0.shape[0],dtype=bool)
     mask[idx*2+1] = 0
     return out0[mask]
+
+
+def calc_colors(scores):
+    Colors = []
+    filtered_scores = [score for score in scores if score>0]
+    max_v = max(filtered_scores)
+    min_v = min(filtered_scores)
+    print('maxmin')
+    print(max_v)
+    print(min_v)
+    print('')
+    if (max_v == 0):
+        print("Max is zero!")
+        exit()
+    elif(max_v - min_v == 0):
+        print("All values are the same!")
+        return [colorbar(1.0)] * len(scores)
+        
+    return [
+            colorbar((point-min_v)/(max_v-min_v))
+            if point >= 0
+            else None
+            for point in scores
+    ]
+
+
+def colorbar(val):
+    r = min(max(0, 1.5-abs(1-4*(val-0.5))),1)
+    g = min(max(0, 1.5-abs(1-4*(val-0.25))),1)
+    b = min(max(0, 1.5-abs(1-4*val)),1)            #conver to hsv?
+    return np.asarray([r,g,b], dtype=float)
+    # tmp_color = rgb_to_hsv(r*255,g*255,b*255)
+    # return ColorHSV(tmp_color[0],tmp_color[1],tmp_color[2])

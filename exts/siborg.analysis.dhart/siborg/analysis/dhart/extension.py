@@ -28,13 +28,13 @@ class DhartExtension(omni.ext.IExt):
         ''' Initialization and any setup needed '''
         self.DI = core.DhartInterface()
 
-        ### Subscribe to events
-        self._usd_context = omni.usd.get_context()
-        self._selection = self._usd_context.get_selection()
-        self._events = self._usd_context.get_stage_event_stream()
-        self._stage_event_sub = self._events.create_subscription_to_pop(self._on_stage_event, 
-                                                                        name='my stage update'
-                                                                        )
+        # ### Subscribe to events
+        # self._usd_context = omni.usd.get_context()
+        # self._selection = self._usd_context.get_selection()
+        # self._events = self._usd_context.get_stage_event_stream()
+        # self._stage_event_sub = self._events.create_subscription_to_pop(self._on_stage_event, 
+        #                                                                 name='my stage update'
+                                                                        # )
 
     def _on_stage_event(self, event):
         ''' subscription to an event on the stage '''

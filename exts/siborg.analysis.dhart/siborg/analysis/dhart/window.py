@@ -37,14 +37,16 @@ def populate_window(DI, render):
                 max_nodes = ui.IntField(height=5)
                 max_nodes.model.add_value_changed_fn(lambda m : DI.set_max_nodes(m.get_value_as_int()))
                 ui.Label(" Grid Spacing: ")
-                grid_spacing = ui.IntField(height=5)
+                grid_spacing = ui.FloatField(height=5)
                 grid_spacing.model.add_value_changed_fn(lambda m : DI.set_spacing(m.get_value_as_float()))
                 ui.Label(" Height Spacing: ")
-                height_space = ui.IntField(height=5)
+                height_space = ui.FloatField(height=5)
                 height_space.model.add_value_changed_fn(lambda m : DI.set_height(m.get_value_as_float()))
 
             ui.Button("Set Mesh for BVH", clicked_fn=lambda: DI.set_as_bvh(), height=50)
             ui.Button("Generate Graph", clicked_fn=lambda: DI.generate_graph(), height=50)
+            ui.Button("Visibility Graph", clicked_fn=lambda: DI.visibility_graph(), height=50)
+            ui.Button("Visibility Graph to Points", clicked_fn=lambda: DI.visibility_graph_groups(), height=50)
             ui.Button("Find Path", clicked_fn=lambda: DI.get_path(), height=50)
             ui.Button("Set Camera on Path", clicked_fn=lambda: render.assign_camera(), height=30)
 
