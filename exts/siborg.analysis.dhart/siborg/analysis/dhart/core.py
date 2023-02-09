@@ -129,6 +129,12 @@ class DhartInterface():
 
     def set_height(self, z):
         self.height = z
+    
+    def set_nodesize(self, s):
+        self.node_size = s
+
+    def set_pathsize(self, s):
+        self.path_size = s
 
     def generate_graph(self):
         ''' use dhart to generate a graph '''
@@ -261,7 +267,7 @@ class DhartInterface():
     def create_geompoints(self, nodes):
         
         stage = omni.usd.get_context().get_stage()
-        prim = UsdGeom.Points.Define(stage, "/World/Nodes/Points")
+        prim = UsdGeom.Points.Define(stage, "/World/Graph/Points")
         prim.CreatePointsAttr(nodes)
         width_attr = prim.CreateWidthsAttr()
         width_attr.Set([self.node_size])

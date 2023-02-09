@@ -39,6 +39,16 @@ def populate_window(DI, render):
                 ui.Label(" Grid Spacing: ")
                 grid_spacing = ui.FloatField(height=5)
                 grid_spacing.model.add_value_changed_fn(lambda m : DI.set_spacing(m.get_value_as_float()))
+
+                ui.Label(" Node Size: ")
+                node_size = ui.FloatField(height=5)
+                node_size.model.add_value_changed_fn(lambda m : DI.set_nodesize(m.get_value_as_float()))
+
+                ui.Label(" Path Size: ")
+                path_size = ui.FloatField(height=5)
+                path_size.model.add_value_changed_fn(lambda m : DI.set_pathsize(m.get_value_as_float()))
+
+
                 ui.Label(" Height Spacing: ")
                 height_space = ui.FloatField(height=5)
                 height_space.model.add_value_changed_fn(lambda m : DI.set_height(m.get_value_as_float()))
