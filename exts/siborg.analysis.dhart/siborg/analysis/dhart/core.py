@@ -12,6 +12,10 @@ from dhart.visibilitygraph import VisibilityGraphAllToAll
 from dhart.visibilitygraph import VisibilityGraphUndirectedAllToAll
 from dhart.visibilitygraph import VisibilityGraphGroupToGroup
 
+from dhart.pathfinding import DijkstraShortestPath
+from dhart.spatialstructures.cost_algorithms import CalculateEnergyExpenditure, CostAlgorithmKeys
+from dhart.spatialstructures import Graph, Direction
+
 import time
 
 class DhartInterface():
@@ -24,6 +28,10 @@ class DhartInterface():
         # BVH for DHART
         self.bvh = None
 
+        self.VG = None
+        self.VG_group = None
+        self.graph = None
+        
         # Selected Starting Location
         self.start_prim = None
         
@@ -120,7 +128,6 @@ class DhartInterface():
                     self.bvh.AddMesh(MI)
                     print('Added to BVH')
 
-
     def set_max_nodes(self, m):
         self.max_nodes = m
 
@@ -165,7 +172,6 @@ class DhartInterface():
             return 
 
         self.create_geompoints(self.nodes.tolist())
-        # self.create_colored_geompoints(self.nodes.tolist())
 
     def get_to_nodes(self):
 
@@ -179,42 +185,41 @@ class DhartInterface():
         return b_nodes
 
     def visibility_graph_groups(self):
-
         start_t = time.time()
 
         nodes_a = self.nodes # Define points as the graph nodes
-        
         nodes_b = self.get_to_nodes()
 
-        VG = VisibilityGraphGroupToGroup(self.bvh, nodes_a, nodes_b, self.height) # Calculate the visibility graph
-        if VG is None: return 
+        self.VG_group = VisibilityGraphGroupToGroup(self.bvh, nodes_a, nodes_b, self.height) # Calculate the visibility graph
+        if self.VG_group is None: 
+            print('VG Failed')
+            return 
         # visibility_graph = VG.CompressToCSR() # Convert to a CSR (matrix)
-        scores = VG.AggregateEdgeCosts(2, True) # Aggregate the visibility graph scores
+        scores = self.VG_group.AggregateEdgeCosts(2, True) # Aggregate the visibility graph scores
         scores = scores[:-len(nodes_b)] # remove b nodes
         print(f'VG group time = {time.time()-start_t}')
+
+        # add scores to node attributes
+        attr = "vg_group"
+        ids = self.graph.getNodes()
+        self.graph.add_node_attributes(attr, ids, scores)
 
         self.score_vg(scores)
 
     def visibility_graph(self):
-
         start_t = time.time()
 
-        # height = 10 # Set a height offset to cast rays from the points
-        points = self.graph.getNodes() # Define points as the graph nodes
-        
-        VG = VisibilityGraphUndirectedAllToAll(self.bvh, points, self.height) # Calculate the visibility graph
+        points = self.graph.getNodes() # Define points as the graph nodes        
+        self.VG = VisibilityGraphUndirectedAllToAll(self.bvh, points, self.height) # Calculate the visibility graph
         # VG = VisibilityGraphAllToAll(self.bvh, points, self.height) # Calculate the visibility graph
         
-        # visibility_graph = VG.CompressToCSR() # Convert to a CSR (matrix)
-        scores = VG.AggregateEdgeCosts(2, True) # Aggregate the visibility graph scores
-
+        scores = self.VG.AggregateEdgeCosts(2, True) # Aggregate the visibility graph scores
         print(f'VG time = {time.time()-start_t}')
 
         self.score_vg(scores)
 
     def score_vg(self, scores):
 
-        start_t = time.time()
         scores = np.asarray(scores)
 
         bin_edges = np.histogram_bin_edges(scores, bins='auto')
@@ -225,18 +230,15 @@ class DhartInterface():
             ind = np.where(digitized == idx)
             scores[ind] = bin_edges[idx]
         scores = np.asarray(scores)
-
-        print(f'Bin time = {time.time()-start_t}')
-        start_t = time.time()
-
         colors = calc_colors(scores)
-
-        print(f'color time = {time.time()-start_t}')
-        start_t = time.time()
 
         self.create_colored_geompoints(self.nodes.tolist(), colors)
 
-        print(f'End time = {time.time()-start_t}')
+    def reset_endpoints(self):
+        s_prim =  self.stage.GetPrimAtPath(self.path_start_path)
+        self.start_point = omni.usd.utils.get_world_transform_matrix(s_prim).ExtractTranslation()
+        e_prim =  self.stage.GetPrimAtPath(self.path_end_path)
+        self.end_point = omni.usd.utils.get_world_transform_matrix(e_prim).ExtractTranslation()
 
     def get_path(self):
         ''' Get the shortest path by distance '''
@@ -244,11 +246,7 @@ class DhartInterface():
         # DHART requires passing the desired nodes (not the positions)
         # So, we will allow users to select an arbitrary position and get the closest node ids to it
 
-        s_prim =  self.stage.GetPrimAtPath(self.path_start_path)
-        self.start_point = omni.usd.utils.get_world_transform_matrix(s_prim).ExtractTranslation()
-        e_prim =  self.stage.GetPrimAtPath(self.path_end_path)
-        self.end_point = omni.usd.utils.get_world_transform_matrix(e_prim).ExtractTranslation()
-
+        self.reset_endpoints()
 
         p_desired = np.array([self.start_point, self.end_point])
         closest_nodes = self.graph.get_closest_nodes(p_desired)
@@ -258,7 +256,50 @@ class DhartInterface():
 
         self.create_curve(path_xyz.tolist())
 
-        return
+    def get_energy_path(self):
+        # Get the key
+        energy_cost_key = CostAlgorithmKeys.ENERGY_EXPENDITURE
+        CalculateEnergyExpenditure(self.graph)
+
+        self.reset_endpoints()
+        p_desired = np.array([self.start_point, self.end_point])
+        closest_nodes = self.graph.get_closest_nodes(p_desired)
+
+        # Call the shortest path again, with the optional cost type
+        energy_path = DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1], energy_cost_key)
+        path_xyz = np.take(self.nodes[['x','y','z']], energy_path['id'])
+        self.create_curve(path_xyz.tolist())
+
+        # As the cost array is numpy, simple operations to sum the total cost can be calculated
+        path_sum = np.sum(energy_path['cost_to_next'])
+        print('Total path cost: ', path_sum)
+
+    def get_visibility_path(self):
+
+        # make sure visibility graph was made
+        
+        # get node ids and attrs of vg
+        self.reset_endpoints()
+
+        # assign new node attrs for visibility
+        csr = self.graph.CompressToCSR()
+
+        # Get attribute scores from the graph
+        # out_attrs = self.graph.get_node_attributes(attr)
+
+        self.graph.attrs_to_costs("vg_group", "vg_group_cost", Direction.INCOMING)
+
+        # self.graph.GetEdgeCost(1, 2, "vg_group_cost")
+
+        # get custom path based on vg
+        p_desired = np.array([self.start_point, self.end_point])
+        closest_nodes = self.graph.get_closest_nodes(p_desired)
+
+        # Call the shortest path again, with the optional cost type
+        energy_path = DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1], 'vg_group_cost')
+        path_xyz = np.take(self.nodes[['x','y','z']], energy_path['id'])
+        self.create_curve(path_xyz.tolist())
+
 
     def scene_setup(self):
         # Get stage.
@@ -330,7 +371,6 @@ class DhartInterface():
             # bin_color = np.asarray(bin_color)
             color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
             color_primvar.Set(c_val)
-
 
     def create_curve(self, nodes):
         '''Create and draw a BasisCurve on the stage following the nodes'''
@@ -405,43 +445,6 @@ class DhartInterface():
             print(prim)
         return None
 
-    # def convert_to_mesh(self, prim):
-    #     ''' convert a prim to BVH '''
-
-    #     # Get mesh name (prim name)
-    #     m = UsdGeom.Mesh(prim)
-
-    #     # Get verts and triangles
-    #     tris = m.GetFaceVertexIndicesAttr().Get()
-
-    #     tris_cnt = m.GetFaceVertexCountsAttr().Get()
-
-    #     verts = m.GetPointsAttr().Get()
-
-    #     tri_list = np.array(tris)
-    #     vert_list = np.array(verts)
-
-    #     # Apply any transforms to USD points 
-    #     world_transform: Gf.Matrix4d = omni.usd.get_world_transform_matrix(prim)
-    #     rotmat = world_transform.ExtractRotationMatrix()
-    #     trans = world_transform.ExtractTranslation()
-    #     vert_rotated = np.dot(vert_list, rotmat) # Rotate points
-
-    #     # trans = np.array(trans).reshape(1,3)
-    #     vert_translated = vert_rotated + trans
-    #     vert_list = vert_translated.flatten()
-
-    #     # Check if the face counts are 4, if so, reshape and turn to triangles
-    #     if tris_cnt[0] == 4:
-    #         quad_list = tri_list.reshape(-1,4)
-    #         tri_list = quad_to_tri(quad_list)
-    #         tri_list = tri_list.flatten()
-
-    #     try:
-    #         MI = dhart.geometry.MeshInfo(tri_list, vert_list, "testmesh", 0)
-    #     except:
-    #         print(prim)
-    #     return MI 
 
 def quad_to_tri(a):
     idx = np.flatnonzero(a[:,-1] == 0)
@@ -460,7 +463,6 @@ def quad_to_tri(a):
 
 
 def calc_colors(scores):
-    Colors = []
     filtered_scores = [score for score in scores if score>=0]
     max_v = max(filtered_scores)
     min_v = min(filtered_scores)
@@ -486,7 +488,65 @@ def calc_colors(scores):
 def colorbar(val):
     r = min(max(0, 1.5-abs(1-4*(val-0.5))),1)
     g = min(max(0, 1.5-abs(1-4*(val-0.25))),1)
-    b = min(max(0, 1.5-abs(1-4*val)),1)            #conver to hsv?
+    b = min(max(0, 1.5-abs(1-4*val)),1)
     return np.asarray([r,g,b], dtype=float)
-    # tmp_color = rgb_to_hsv(r*255,g*255,b*255)
-    # return ColorHSV(tmp_color[0],tmp_color[1],tmp_color[2])
+
+def warp_instance_demo(self, name: str, vertices, color: tuple, radius: float=0.01):
+    # render_line_strip
+    from pxr import UsdGeom, Gf
+
+    num_lines = int(len(vertices)-1)
+
+    if (num_lines < 1):
+        return
+
+    # look up rope point instancer
+    instancer_path = self.root.GetPath().AppendChild(name)
+    instancer = UsdGeom.PointInstancer.Get(self.stage, instancer_path)
+
+    if not instancer:
+        instancer = UsdGeom.PointInstancer.Define(self.stage, instancer_path)
+        instancer_capsule = UsdGeom.Capsule.Define(self.stage, instancer.GetPath().AppendChild("capsule"))
+        instancer_capsule.GetRadiusAttr().Set(radius)          
+        instancer.CreatePrototypesRel().SetTargets([instancer_capsule.GetPath()])
+        
+    line_positions = []
+    line_rotations = []
+    line_scales = []
+
+    for i in range(num_lines):
+
+        pos0 = vertices[i]
+        pos1 = vertices[i+1]
+
+        (pos, rot, scale) = _compute_segment_xform(Gf.Vec3f(float(pos0[0]), float(pos0[1]), float(pos0[2])), 
+                                                    Gf.Vec3f(float(pos1[0]), float(pos1[1]), float(pos1[2])))
+
+        line_positions.append(pos)
+        line_rotations.append(rot)
+        line_scales.append(scale)
+
+    instancer.GetPositionsAttr().Set(line_positions, self.time)
+    instancer.GetOrientationsAttr().Set(line_rotations, self.time)
+    instancer.GetScalesAttr().Set(line_scales, self.time)
+    instancer.GetProtoIndicesAttr().Set([0] * num_lines, self.time)
+
+    instancer_capsule = UsdGeom.Capsule.Get(self.stage, instancer.GetPath().AppendChild("capsule"))
+    instancer_capsule.GetDisplayColorAttr().Set([Gf.Vec3f(color)], self.time)
+
+# transforms a cylinder such that it connects the two points pos0, pos1
+def _compute_segment_xform(pos0, pos1):
+
+    from pxr import Gf
+
+    mid = (pos0 + pos1) * 0.5
+    height = (pos1 - pos0).GetLength()
+
+    dir = (pos1 - pos0) / height
+
+    rot = Gf.Rotation()
+    rot.SetRotateInto((0.0, 0.0, 1.0), Gf.Vec3d(dir))
+
+    scale = Gf.Vec3f(1.0, 1.0, height)
+
+    return (mid, Gf.Quath(rot.GetQuat()), scale)
