@@ -27,6 +27,7 @@ class DhartInterface():
         
         # BVH for DHART
         self.bvh = None
+        self.vis_bvh = None # Separate BVH for storing opaque objects
 
         self.VG = None
         self.VG_group = None
@@ -35,17 +36,21 @@ class DhartInterface():
         # Selected Starting Location
         self.start_prim = None
         
-        self.node_size = 0.1
-        self.path_size = 0.3
+        self.node_size = 15
+        self.path_size = 20
 
         # Set 0 start
         self.start_point = [0,0,0]
 
         # Set max nodes
-        self.max_nodes = 500
+        self.max_nodes = 400
 
-        self.grid_spacing = [.1,.1]
-        self.height = .1
+        self.grid_spacing = [20,20]
+        self.height = 80
+        self.upstep = 500
+        self.downstep = 500
+        self.upslope = 90
+        self.downslope = 90
 
         self.targ_vis_path = '/World/TargetNodes'
         self.path_start_path = '/World/StartPath'
@@ -100,6 +105,14 @@ class DhartInterface():
         print(f'END IS: {self.end_point}')
 
     def set_as_bvh(self):
+        # Set the graph bvh
+        self.set_bvh(vis=False)
+
+    def set_as_vis_bvh(self):
+        # Set the visibility-based bvh
+        self.set_bvh(vis=True)
+
+    def set_bvh(self, vis=False):
 
         # Get the current active selection of the stage
         self.stage = omni.usd.get_context().get_stage()
@@ -121,12 +134,20 @@ class DhartInterface():
             if prim_type == 'Mesh':
                 MI = self.convert_to_mesh(prim)
                 if not made_bvh:
-                    self.bvh = dhart.raytracer.EmbreeBVH(MI)
+                    if vis:
+                        self.vis_bvh = dhart.raytracer.EmbreeBVH(MI)
+                        print(f'VIS BVH is: {self.vis_bvh}')
+                    else:
+                        self.bvh = dhart.raytracer.EmbreeBVH(MI)
+                        print(f'BVH is: {self.bvh}')
                     made_bvh = True 
-                    print(f'BVH is: {self.bvh}')
                 else:
-                    self.bvh.AddMesh(MI)
-                    print('Added to BVH')
+                    if vis:
+                        self.vis_bvh.AddMesh(MI)
+                        print('Added to VIS BVH')
+                    else:
+                        self.bvh.AddMesh(MI)
+                        print('Added to BVH')
 
     def set_max_nodes(self, m):
         self.max_nodes = m
@@ -137,6 +158,18 @@ class DhartInterface():
     def set_height(self, z):
         self.height = z
     
+    def set_upstep(self, u):
+        self.upstep = u
+
+    def set_upslope(self, us):
+        self.upslope = us
+
+    def set_downstep(self, d):
+        self.downstep = d
+
+    def set_downslope(self, ds):
+        self.downslope = ds
+
     def set_nodesize(self, s):
         self.node_size = s
 
@@ -159,10 +192,10 @@ class DhartInterface():
                                                     self.start_point,
                                                     spacing,
                                                     max_nodes,
-                                                    up_step = 30,
-                                                    down_step = 30,
-                                                    up_slope = 10,
-                                                    down_slope=10,
+                                                    up_step = self.upstep,
+                                                    down_step = self.downstep,
+                                                    up_slope = self.upslope,
+                                                    down_slope=self.downslope,
                                                     cores=-1)
         if self.graph:
             self.nodes = self.graph.getNodes().array[['x','y','z']]
@@ -190,7 +223,7 @@ class DhartInterface():
         nodes_a = self.nodes # Define points as the graph nodes
         nodes_b = self.get_to_nodes()
 
-        self.VG_group = VisibilityGraphGroupToGroup(self.bvh, nodes_a, nodes_b, self.height) # Calculate the visibility graph
+        self.VG_group = VisibilityGraphGroupToGroup(self.vis_bvh, nodes_a, nodes_b, self.height) # Calculate the visibility graph
         if self.VG_group is None: 
             print('VG Failed')
             return 
@@ -201,8 +234,9 @@ class DhartInterface():
 
         # add scores to node attributes
         attr = "vg_group"
-        ids = self.graph.getNodes()
-        self.graph.add_node_attributes(attr, ids, scores)
+        ids = self.graph.getNodes().array['id']
+        str_scores = [str(1.0/(x+0.01)) for x in scores] # we need scores to be a string for dhart. was to encode any type of node data
+        self.graph.add_node_attributes(attr, ids, str_scores)
 
         self.score_vg(scores)
 
@@ -210,11 +244,18 @@ class DhartInterface():
         start_t = time.time()
 
         points = self.graph.getNodes() # Define points as the graph nodes        
-        self.VG = VisibilityGraphUndirectedAllToAll(self.bvh, points, self.height) # Calculate the visibility graph
+        self.VG = VisibilityGraphUndirectedAllToAll(self.vis_bvh, points, self.height) # Calculate the visibility graph
         # VG = VisibilityGraphAllToAll(self.bvh, points, self.height) # Calculate the visibility graph
         
         scores = self.VG.AggregateEdgeCosts(2, True) # Aggregate the visibility graph scores
         print(f'VG time = {time.time()-start_t}')
+
+        # add scores to node attributes
+        attr = "vg_all"
+        ids = self.graph.getNodes().array['id']
+        str_scores = [str(x) for x in scores] # we need scores to be a string for dhart. was to encode any type of node data
+        self.graph.add_node_attributes(attr, ids, str_scores)
+
 
         self.score_vg(scores)
 
@@ -296,8 +337,34 @@ class DhartInterface():
         closest_nodes = self.graph.get_closest_nodes(p_desired)
 
         # Call the shortest path again, with the optional cost type
-        energy_path = DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1], 'vg_group_cost')
-        path_xyz = np.take(self.nodes[['x','y','z']], energy_path['id'])
+        visibility_path = DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1], 'vg_group_cost')
+        path_xyz = np.take(self.nodes[['x','y','z']], visibility_path['id'])
+        self.create_curve(path_xyz.tolist())
+
+    def get_vg_path(self):
+    
+        # make sure visibility graph was made
+        
+        # get node ids and attrs of vg
+        self.reset_endpoints()
+
+        # assign new node attrs for visibility
+        csr = self.graph.CompressToCSR()
+
+        # Get attribute scores from the graph
+        # out_attrs = self.graph.get_node_attributes(attr)
+
+        self.graph.attrs_to_costs("vg_all", "vg_all_cost", Direction.INCOMING)
+
+        # self.graph.GetEdgeCost(1, 2, "vg_group_cost")
+
+        # get custom path based on vg
+        p_desired = np.array([self.start_point, self.end_point])
+        closest_nodes = self.graph.get_closest_nodes(p_desired)
+
+        # Call the shortest path again, with the optional cost type
+        visibility_path = DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1], 'vg_all_cost')
+        path_xyz = np.take(self.nodes[['x','y','z']], visibility_path['id'])
         self.create_curve(path_xyz.tolist())
 
 
@@ -484,69 +551,8 @@ def calc_colors(scores):
             for point in scores
     ]
 
-
 def colorbar(val):
     r = min(max(0, 1.5-abs(1-4*(val-0.5))),1)
     g = min(max(0, 1.5-abs(1-4*(val-0.25))),1)
     b = min(max(0, 1.5-abs(1-4*val)),1)
     return np.asarray([r,g,b], dtype=float)
-
-def warp_instance_demo(self, name: str, vertices, color: tuple, radius: float=0.01):
-    # render_line_strip
-    from pxr import UsdGeom, Gf
-
-    num_lines = int(len(vertices)-1)
-
-    if (num_lines < 1):
-        return
-
-    # look up rope point instancer
-    instancer_path = self.root.GetPath().AppendChild(name)
-    instancer = UsdGeom.PointInstancer.Get(self.stage, instancer_path)
-
-    if not instancer:
-        instancer = UsdGeom.PointInstancer.Define(self.stage, instancer_path)
-        instancer_capsule = UsdGeom.Capsule.Define(self.stage, instancer.GetPath().AppendChild("capsule"))
-        instancer_capsule.GetRadiusAttr().Set(radius)          
-        instancer.CreatePrototypesRel().SetTargets([instancer_capsule.GetPath()])
-        
-    line_positions = []
-    line_rotations = []
-    line_scales = []
-
-    for i in range(num_lines):
-
-        pos0 = vertices[i]
-        pos1 = vertices[i+1]
-
-        (pos, rot, scale) = _compute_segment_xform(Gf.Vec3f(float(pos0[0]), float(pos0[1]), float(pos0[2])), 
-                                                    Gf.Vec3f(float(pos1[0]), float(pos1[1]), float(pos1[2])))
-
-        line_positions.append(pos)
-        line_rotations.append(rot)
-        line_scales.append(scale)
-
-    instancer.GetPositionsAttr().Set(line_positions, self.time)
-    instancer.GetOrientationsAttr().Set(line_rotations, self.time)
-    instancer.GetScalesAttr().Set(line_scales, self.time)
-    instancer.GetProtoIndicesAttr().Set([0] * num_lines, self.time)
-
-    instancer_capsule = UsdGeom.Capsule.Get(self.stage, instancer.GetPath().AppendChild("capsule"))
-    instancer_capsule.GetDisplayColorAttr().Set([Gf.Vec3f(color)], self.time)
-
-# transforms a cylinder such that it connects the two points pos0, pos1
-def _compute_segment_xform(pos0, pos1):
-
-    from pxr import Gf
-
-    mid = (pos0 + pos1) * 0.5
-    height = (pos1 - pos0).GetLength()
-
-    dir = (pos1 - pos0) / height
-
-    rot = Gf.Rotation()
-    rot.SetRotateInto((0.0, 0.0, 1.0), Gf.Vec3d(dir))
-
-    scale = Gf.Vec3f(1.0, 1.0, height)
-
-    return (mid, Gf.Quath(rot.GetQuat()), scale)
