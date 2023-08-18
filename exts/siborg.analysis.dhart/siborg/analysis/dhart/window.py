@@ -95,6 +95,7 @@ def populate_window(DI, render):
                 ui.Button("Visibility Graph to Points", clicked_fn=lambda: DI.visibility_graph_groups(), height=50)
             with ui.HStack(height=5):
                 ui.Button("Find Path", clicked_fn=lambda: DI.get_path(), height=50)
+                ui.Button("Find Energy Path", clicked_fn=lambda: DI.get_energy_path(), height=50)
                 ui.Button("Find Visibility Path", clicked_fn=lambda: DI.get_visibility_path(), height=50)
                 ui.Button("Find VG Path", clicked_fn=lambda: DI.get_vg_path(), height=50)
             

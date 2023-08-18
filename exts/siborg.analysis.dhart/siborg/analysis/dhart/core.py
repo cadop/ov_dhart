@@ -16,6 +16,8 @@ from dhart.pathfinding import DijkstraShortestPath
 from dhart.spatialstructures.cost_algorithms import CalculateEnergyExpenditure, CostAlgorithmKeys
 from dhart.spatialstructures import Graph, Direction
 
+from . import usd_utils
+
 import time
 
 class DhartInterface():
@@ -129,25 +131,52 @@ class DhartInterface():
 
         for prim in prims:
     
-            prim_type = prim.GetTypeName()
-            # Only add if its a mesh
-            if prim_type == 'Mesh':
-                MI = self.convert_to_mesh(prim)
-                if not made_bvh:
-                    if vis:
-                        self.vis_bvh = dhart.raytracer.EmbreeBVH(MI)
-                        print(f'VIS BVH is: {self.vis_bvh}')
-                    else:
-                        self.bvh = dhart.raytracer.EmbreeBVH(MI)
-                        print(f'BVH is: {self.bvh}')
-                    made_bvh = True 
+            # MI = self.convert_to_mesh_old(prim)
+            MI = self.convert_to_mesh(prim)
+            if MI is None:
+                print("BVH FAILED")
+                continue 
+            if not made_bvh:
+                if vis:
+                    self.vis_bvh = dhart.raytracer.EmbreeBVH(MI)
+                    print(f'VIS BVH is: {self.vis_bvh}')
                 else:
-                    if vis:
-                        self.vis_bvh.AddMesh(MI)
-                        print('Added to VIS BVH')
-                    else:
-                        self.bvh.AddMesh(MI)
-                        print('Added to BVH')
+                    self.bvh = dhart.raytracer.EmbreeBVH(MI)
+                    print(f'BVH is: {self.bvh}')
+                made_bvh = True 
+            else:
+                if vis:
+                    self.vis_bvh.AddMesh(MI)
+                    print('Added to VIS BVH')
+                else:
+                    self.bvh.AddMesh(MI)
+                    print('Added to BVH')
+
+        # for prim in prims:
+    
+        #     prim_type = prim.GetTypeName()
+        #     # Only add if its a mesh
+        #     if prim_type == 'Mesh':
+        #         # MI = self.convert_to_mesh_old(prim)
+        #         MI = self.convert_to_mesh(prim)
+        #         if MI is None:
+        #             print("BVH FAILED")
+        #             continue 
+        #         if not made_bvh:
+        #             if vis:
+        #                 self.vis_bvh = dhart.raytracer.EmbreeBVH(MI)
+        #                 print(f'VIS BVH is: {self.vis_bvh}')
+        #             else:
+        #                 self.bvh = dhart.raytracer.EmbreeBVH(MI)
+        #                 print(f'BVH is: {self.bvh}')
+        #             made_bvh = True 
+        #         else:
+        #             if vis:
+        #                 self.vis_bvh.AddMesh(MI)
+        #                 print('Added to VIS BVH')
+        #             else:
+        #                 self.bvh.AddMesh(MI)
+        #                 print('Added to BVH')
 
     def set_max_nodes(self, m):
         self.max_nodes = m
@@ -292,10 +321,27 @@ class DhartInterface():
         p_desired = np.array([self.start_point, self.end_point])
         closest_nodes = self.graph.get_closest_nodes(p_desired)
 
+        self.show_nodes(closest_nodes)
+
         path = DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1])
         path_xyz = np.take(self.nodes[['x','y','z']], path['id'])
 
+        print(len(path_xyz.tolist()))
         self.create_curve(path_xyz.tolist())
+
+    def show_nodes(self, nodes):
+        stage = omni.usd.get_context().get_stage()
+        prim = UsdGeom.Points.Define(stage, "/World/Graph/Closest")
+        prim.CreatePointsAttr(nodes)
+        width_attr = prim.CreateWidthsAttr()
+        width_attr.Set([self.node_size*4])
+
+        # prim.CreateDisplayColorAttr()
+        # For RTX renderers, this only works for UsdGeom.Tokens.constant
+
+        color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
+        color_primvar.Set([(0,0,1)])
+
 
     def get_energy_path(self):
         # Get the key
@@ -464,7 +510,21 @@ class DhartInterface():
 
         return 
 
-    def convert_to_mesh(self, prim):
+    def convert_to_mesh(self,prim):
+
+        vert_list, tri_list  = usd_utils.parent_and_children_as_mesh(prim)
+        # vert_list, tri_list  = usd_utils.get_mesh([prim])
+        tri_list = np.array(tri_list).flatten()
+        vert_list = np.array(vert_list).flatten()
+
+        try:
+            MI = dhart.geometry.MeshInfo(tri_list, vert_list, "testmesh", 0)
+            return MI 
+        except:
+            print(prim)
+        return None
+
+    def convert_to_mesh_old(self, prim):
         ''' convert a prim to BVH '''
 
         # Get mesh name (prim name)
