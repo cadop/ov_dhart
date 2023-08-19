@@ -3,7 +3,7 @@ import omni.ui as ui
 
 def populate_window(DI, render):
     
-    _window = ui.Window("DHART", width=300, height=300)
+    _window = ui.Window("DHART", width=600, height=600)
     with _window.frame:
         with ui.VStack():
             with ui.HStack(height=5):

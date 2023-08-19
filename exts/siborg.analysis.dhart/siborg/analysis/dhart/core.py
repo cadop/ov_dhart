@@ -7,12 +7,14 @@ import dhart
 import dhart.geometry
 import dhart.raytracer
 import dhart.graphgenerator
-from dhart.pathfinding import DijkstraShortestPath
+
+from dhart import pathfinding
+
 from dhart.visibilitygraph import VisibilityGraphAllToAll
 from dhart.visibilitygraph import VisibilityGraphUndirectedAllToAll
 from dhart.visibilitygraph import VisibilityGraphGroupToGroup
 
-from dhart.pathfinding import DijkstraShortestPath
+
 from dhart.spatialstructures.cost_algorithms import CalculateEnergyExpenditure, CostAlgorithmKeys
 from dhart.spatialstructures import Graph, Direction
 
@@ -127,12 +129,10 @@ class DhartInterface():
         prims = [self.stage.GetPrimAtPath(x) for x in selected_paths]
 
         # Record if a BVH was generated
-        made_bvh = False
-
-        for prim in prims:
-    
-            # MI = self.convert_to_mesh_old(prim)
-            MI = self.convert_to_mesh(prim)
+        made_bvh = False 
+   
+        for prim in prims: 
+            MI = self.convert_to_mesh(prim) 
             if MI is None:
                 print("BVH FAILED")
                 continue 
@@ -142,6 +142,7 @@ class DhartInterface():
                     print(f'VIS BVH is: {self.vis_bvh}')
                 else:
                     self.bvh = dhart.raytracer.EmbreeBVH(MI)
+                    # self.bvh = dhart.raytracer.EmbreeBVH(MI, use_precise=True)
                     print(f'BVH is: {self.bvh}')
                 made_bvh = True 
             else:
@@ -157,8 +158,8 @@ class DhartInterface():
         #     prim_type = prim.GetTypeName()
         #     # Only add if its a mesh
         #     if prim_type == 'Mesh':
-        #         # MI = self.convert_to_mesh_old(prim)
-        #         MI = self.convert_to_mesh(prim)
+        #         MI = self.convert_to_mesh_old(prim)
+        #         # MI = self.convert_to_mesh(prim)
         #         if MI is None:
         #             print("BVH FAILED")
         #             continue 
@@ -206,7 +207,7 @@ class DhartInterface():
         self.path_size = s
 
     def generate_graph(self):
-        ''' use dhart to generate a graph '''
+        ''' use dhart to generate a graph ''' 
 
         if not self.bvh:
             print("No BVH")
@@ -227,6 +228,7 @@ class DhartInterface():
                                                     down_slope=self.downslope,
                                                     cores=-1)
         if self.graph:
+            self.graph.CompressToCSR()
             self.nodes = self.graph.getNodes().array[['x','y','z']]
             print(f'Got {len(self.nodes)} Nodes')
         else:
@@ -305,6 +307,7 @@ class DhartInterface():
         self.create_colored_geompoints(self.nodes.tolist(), colors)
 
     def reset_endpoints(self):
+
         s_prim =  self.stage.GetPrimAtPath(self.path_start_path)
         self.start_point = omni.usd.utils.get_world_transform_matrix(s_prim).ExtractTranslation()
         e_prim =  self.stage.GetPrimAtPath(self.path_end_path)
@@ -316,25 +319,38 @@ class DhartInterface():
         # DHART requires passing the desired nodes (not the positions)
         # So, we will allow users to select an arbitrary position and get the closest node ids to it
 
+
+        #### !!!! This was screwing up the graph generation because the start point was a bunch of decimals
         self.reset_endpoints()
+        self.start_point = [int(x) for x in self.start_point]
+
 
         p_desired = np.array([self.start_point, self.end_point])
         closest_nodes = self.graph.get_closest_nodes(p_desired)
+ 
+        # nodes = self.graph.getNodes()
+        # matching_items = nodes[np.isin(nodes['id'], closest_nodes)]
+        # print(f'Start/End Nodes {matching_items}')
+        # self.show_nodes(matching_items[['x','y','z']].tolist())
 
-        self.show_nodes(closest_nodes)
+        path = pathfinding.DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1])
+        print(f'Path Nodes: {path}')
+        if path is None:
+            print("No PATH Found")
+            return
 
-        path = DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1])
         path_xyz = np.take(self.nodes[['x','y','z']], path['id'])
 
         print(len(path_xyz.tolist()))
         self.create_curve(path_xyz.tolist())
+        self.show_nodes(path_xyz.tolist())
 
     def show_nodes(self, nodes):
         stage = omni.usd.get_context().get_stage()
         prim = UsdGeom.Points.Define(stage, "/World/Graph/Closest")
         prim.CreatePointsAttr(nodes)
         width_attr = prim.CreateWidthsAttr()
-        width_attr.Set([self.node_size*4])
+        width_attr.Set([self.node_size*2])
 
         # prim.CreateDisplayColorAttr()
         # For RTX renderers, this only works for UsdGeom.Tokens.constant
@@ -353,7 +369,7 @@ class DhartInterface():
         closest_nodes = self.graph.get_closest_nodes(p_desired)
 
         # Call the shortest path again, with the optional cost type
-        energy_path = DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1], energy_cost_key)
+        energy_path = pathfinding.DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1], energy_cost_key)
         path_xyz = np.take(self.nodes[['x','y','z']], energy_path['id'])
         self.create_curve(path_xyz.tolist())
 
@@ -383,7 +399,7 @@ class DhartInterface():
         closest_nodes = self.graph.get_closest_nodes(p_desired)
 
         # Call the shortest path again, with the optional cost type
-        visibility_path = DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1], 'vg_group_cost')
+        visibility_path = pathfinding.DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1], 'vg_group_cost')
         path_xyz = np.take(self.nodes[['x','y','z']], visibility_path['id'])
         self.create_curve(path_xyz.tolist())
 
