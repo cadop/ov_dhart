@@ -1,5 +1,10 @@
 from pxr import Usd, UsdGeom, UsdPhysics, UsdShade, Sdf, Gf, Tf, PhysxSchema, Vt
 
+try: 
+    from omni.usd.utils import get_world_transform_matrix
+except: 
+    from omni.usd import get_world_transform_matrix
+
 import omni.physx
 import numpy as np
 
@@ -51,10 +56,10 @@ class DhartInterface():
 
         self.grid_spacing = [20,20]
         self.height = 80
-        self.upstep = 500
-        self.downstep = 500
-        self.upslope = 90
-        self.downslope = 90
+        self.upstep = 30
+        self.downstep = 30
+        self.upslope = 20
+        self.downslope = 20
 
         self.targ_vis_path = '/World/TargetNodes'
         self.path_start_path = '/World/StartPath'
@@ -90,8 +95,12 @@ class DhartInterface():
         selected_paths = self._selection.get_selected_prim_paths()
         # Expects a list, so take first selection
         prim = [self.stage.GetPrimAtPath(x) for x in selected_paths][0]
-
-        selected_point = omni.usd.utils.get_world_transform_matrix(prim).ExtractTranslation()
+        # try:
+        #     selected_point = get_world_transform_matrix(prim).ExtractTranslation()
+        # except:
+        #     selected_point = omni.usd.get_world_transform_matrix(prim).ExtractTranslation()
+        selected_point = get_world_transform_matrix(prim).ExtractTranslation()
+        
         return selected_point
 
     def modify_start(self,x=None,y=None,z=None):
@@ -243,7 +252,7 @@ class DhartInterface():
         children = parent_prim.GetAllChildren()
         b_nodes = []
         for child in children:
-            t = omni.usd.utils.get_world_transform_matrix(child).ExtractTranslation()
+            t = get_world_transform_matrix(child).ExtractTranslation()
             b_nodes.append(np.asarray(t))
 
         return b_nodes
@@ -309,9 +318,9 @@ class DhartInterface():
     def reset_endpoints(self):
 
         s_prim =  self.stage.GetPrimAtPath(self.path_start_path)
-        self.start_point = omni.usd.utils.get_world_transform_matrix(s_prim).ExtractTranslation()
+        self.start_point = get_world_transform_matrix(s_prim).ExtractTranslation()
         e_prim =  self.stage.GetPrimAtPath(self.path_end_path)
-        self.end_point = omni.usd.utils.get_world_transform_matrix(e_prim).ExtractTranslation()
+        self.end_point = get_world_transform_matrix(e_prim).ExtractTranslation()
 
     def get_path(self):
         ''' Get the shortest path by distance '''
@@ -334,7 +343,7 @@ class DhartInterface():
         # self.show_nodes(matching_items[['x','y','z']].tolist())
 
         path = pathfinding.DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1])
-        print(f'Path Nodes: {path}')
+        # print(f'Path Nodes: {path}')
         if path is None:
             print("No PATH Found")
             return
@@ -343,7 +352,7 @@ class DhartInterface():
 
         print(len(path_xyz.tolist()))
         self.create_curve(path_xyz.tolist())
-        self.show_nodes(path_xyz.tolist())
+        # self.show_nodes(path_xyz.tolist())
 
     def show_nodes(self, nodes):
         stage = omni.usd.get_context().get_stage()
@@ -444,9 +453,12 @@ class DhartInterface():
 
         # prim.CreateDisplayColorAttr()
         # For RTX renderers, this only works for UsdGeom.Tokens.constant
+        # color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
+        # color_primvar.Set([(1,0,0)])
 
         color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
         color_primvar.Set([(1,0,0)])
+
 
     def create_colored_geompoints(self, nodes, colors=None):
         '''Create a set of geom points given some input number of nodes and colors
@@ -456,6 +468,7 @@ class DhartInterface():
         nodes : _type_
             _description_
         '''
+
         stage = omni.usd.get_context().get_stage()
         nodes = np.asarray(nodes)
         colors = np.asarray(colors)

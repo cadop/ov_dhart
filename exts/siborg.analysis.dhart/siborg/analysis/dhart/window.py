@@ -86,10 +86,13 @@ def populate_window(DI, render):
                     path_size = ui.FloatField(height=5)
                     path_size.model.add_value_changed_fn(lambda m : DI.set_pathsize(m.get_value_as_float()))
                     path_size.model.set_value(DI.path_size)
-                
-            ui.Button("Set Mesh for BVH", clicked_fn=lambda: DI.set_as_bvh(), height=50)
+                    
+            with ui.HStack(height=5):
+                ui.Button("Set Mesh for BVH", clicked_fn=lambda: DI.set_as_bvh(), height=50)
+                ui.Button("Set Mesh for Visibility BVH", clicked_fn=lambda: DI.set_as_vis_bvh(), height=50)
+            
             ui.Button("Generate Graph", clicked_fn=lambda: DI.generate_graph(), height=50)
-            ui.Button("Set Mesh for Visibility BVH", clicked_fn=lambda: DI.set_as_vis_bvh(), height=50)
+            
             with ui.HStack(height=5):
                 ui.Button("Visibility Graph", clicked_fn=lambda: DI.visibility_graph(), height=50)
                 ui.Button("Visibility Graph to Points", clicked_fn=lambda: DI.visibility_graph_groups(), height=50)
