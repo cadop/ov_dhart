@@ -7,6 +7,7 @@ except:
 
 import omni.physx
 import numpy as np
+from scipy.interpolate import splprep, splev
 
 import dhart 
 import dhart.geometry
@@ -353,6 +354,49 @@ class DhartInterface():
         print(len(path_xyz.tolist()))
         self.create_curve(path_xyz.tolist())
         # self.show_nodes(path_xyz.tolist())
+
+
+    def smooth_path(self):
+        import matplotlib.pyplot as plt
+        from mpl_toolkits.mplot3d import Axes3D
+        import numpy as np
+        from curvepoints import inputpoints as input_points
+
+        def interpolate_curve(points, num_points=100):
+            """Interpolate the curve to produce a denser set of points."""
+            tck, u = splprep([[p[0] for p in points], [p[1] for p in points], [p[2] for p in points]], s=0)
+            u_new = np.linspace(0, 1, num_points)
+            x_new, y_new, z_new = splev(u_new, tck)
+            return list(zip(x_new, y_new, z_new))
+
+        # Re-define the moving_average function as provided by you
+        def moving_average(points, window_size=3):
+            """Smoothen the curve using a moving average."""
+            if window_size < 3:
+                return points  # Too small window, just return original points
+
+            extended_points = points[:window_size-1] + points + points[-(window_size-1):]
+            smoothed_points = []
+
+            for i in range(len(points)):
+                window = extended_points[i:i+window_size]
+                avg_x = sum(pt[0] for pt in window) / window_size
+                avg_y = sum(pt[1] for pt in window) / window_size
+                avg_z = sum(pt[2] for pt in window) / window_size
+                smoothed_points.append((avg_x, avg_y, avg_z))
+
+            return smoothed_points
+
+        # Smooth the original input points
+        smoothed_points = moving_average(input_points, window_size=4)
+
+        # Interpolate the smoothed curve to produce a denser set of points
+        interpolated_points = interpolate_curve(smoothed_points, num_points=500)
+
+        # Smooth the denser set of points
+        smoothed_interpolated_points = moving_average(interpolated_points, window_size=6)
+
+        return smoothed_interpolated_points
 
     def show_nodes(self, nodes):
         stage = omni.usd.get_context().get_stage()
