@@ -352,16 +352,17 @@ class DhartInterface():
         path_xyz = np.take(self.nodes[['x','y','z']], path['id'])
 
         print(len(path_xyz.tolist()))
-        self.create_curve(path_xyz.tolist())
+
+        path_list = path_xyz.tolist()
+        path_nodes = self.smooth_path(path_list)
+        self.create_curve(path_nodes)
         # self.show_nodes(path_xyz.tolist())
 
 
-    def smooth_path(self):
-        import matplotlib.pyplot as plt
-        from mpl_toolkits.mplot3d import Axes3D
-        import numpy as np
-        from curvepoints import inputpoints as input_points
-
+    def smooth_path(self, input_points):
+        '''
+        Interpolate the path and smooth the verts to be shown
+        '''
         def interpolate_curve(points, num_points=100):
             """Interpolate the curve to produce a denser set of points."""
             tck, u = splprep([[p[0] for p in points], [p[1] for p in points], [p[2] for p in points]], s=0)
