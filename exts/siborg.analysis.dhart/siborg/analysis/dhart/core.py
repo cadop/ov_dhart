@@ -300,22 +300,6 @@ class DhartInterface():
 
         self.score_vg(scores)
 
-    def score_vg(self, scores):
-
-        scores = np.asarray(scores)
-
-        bin_edges = np.histogram_bin_edges(scores, bins='auto')
-        digitized = np.digitize(scores, bin_edges)-1
-        idx_bins = np.unique(digitized)
-
-        for idx in idx_bins:
-            ind = np.where(digitized == idx)
-            scores[ind] = bin_edges[idx]
-        scores = np.asarray(scores)
-        colors = calc_colors(scores)
-
-        self.create_colored_geompoints(self.nodes.tolist(), colors)
-
     def reset_endpoints(self):
 
         s_prim =  self.stage.GetPrimAtPath(self.path_start_path)
@@ -488,6 +472,24 @@ class DhartInterface():
         # Get stage.
         self.stage = omni.usd.get_context().get_stage()
 
+
+    def score_vg(self, scores):
+
+        scores = np.asarray(scores)
+        colors = calc_colors(scores)
+        self.create_colored_geompoints(self.nodes.tolist(), colors)
+
+    def create_colored_geompoints(self, nodes, colors=None):
+
+        stage = omni.usd.get_context().get_stage()
+        prim = UsdGeom.Points.Define(stage, "/World/Graph/VGPoints")
+        prim.CreatePointsAttr(nodes)
+        width_attr = prim.CreateWidthsAttr()
+        width_attr.Set([self.node_size])
+
+        color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.vertex)
+        color_primvar.Set(colors)
+
     def create_geompoints(self, nodes):
         
         stage = omni.usd.get_context().get_stage()
@@ -496,68 +498,8 @@ class DhartInterface():
         width_attr = prim.CreateWidthsAttr()
         width_attr.Set([self.node_size])
 
-        # prim.CreateDisplayColorAttr()
-        # For RTX renderers, this only works for UsdGeom.Tokens.constant
-        # color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
-        # color_primvar.Set([(1,0,0)])
-
         color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
         color_primvar.Set([(1,0,0)])
-
-
-    def create_colored_geompoints(self, nodes, colors=None):
-        '''Create a set of geom points given some input number of nodes and colors
-
-        Parameters
-        ----------
-        nodes : _type_
-            _description_
-        '''
-
-        stage = omni.usd.get_context().get_stage()
-        nodes = np.asarray(nodes)
-        colors = np.asarray(colors)
-
-        # Get indices of nodes that align with similar colors
-
-        # Create a set of colors (unique elements)
-        unique, color_set = np.unique(colors, axis=0, return_index=True)
-        # Go through each color 
-        # for color in color_set:
-        #     idx = np.where(nodes == colors[color])
-        #     # pull out
-
-        # Split colors into bins, and use the indices of the bins to split spheres
-
-        bin_nodes = nodes
-        # bin_color = np.asarray([1,0,0])
-
-        for i, color in enumerate(color_set):
-            c_val =  colors[color]
-            c_idx = np.where(nodes ==c_val)
-            t =nodes[:,0]==c_val[0]
-            condition = (colors[:,0]==c_val[0]) & (colors[:,1]==c_val[1]) & (colors[:,2]==c_val[2])
-            c_idx = np.where(condition)
-
-            if len(c_idx) == 0: continue
-
-            node_set = np.asarray(nodes[c_idx])
-
-            # Create a new points definition based on the number of bins
-            prim = UsdGeom.Points.Define(stage, f"/World/Nodes/Points_{i}")
-            prim.CreatePointsAttr(node_set)
-            width_attr = prim.CreateWidthsAttr()
-            width_attr.Set([self.node_size])
-
-            # prim.CreateDisplayColorAttr()
-            # For RTX renderers, this only works for UsdGeom.Tokens.constant
-
-            # bin_color = np.random.randint(0,2,3)
-            # These should all be the same value
-            # bin_color = colors[idx]
-            # bin_color = np.asarray(bin_color)
-            color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
-            color_primvar.Set(c_val)
 
     def create_curve(self, nodes):
         '''Create and draw a BasisCurve on the stage following the nodes'''
