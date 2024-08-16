@@ -22,12 +22,18 @@ def traverse_instanced_children(prim):
             yield subchild
 
 def parent_and_children_as_mesh(parent_prim):
+    
+    if UsdGeom.Imageable(parent_prim).ComputeVisibility() == UsdGeom.Tokens.invisible:
+        return [], []
     if parent_prim.IsA(UsdGeom.Mesh):
         points, faces = get_mesh(parent_prim)
         return points, faces
     
     found_meshes = []
     for x in traverse_instanced_children(parent_prim):
+        # Check if prim is visible in the scene or not
+        if UsdGeom.Imageable(x).ComputeVisibility() == UsdGeom.Tokens.invisible:
+            continue
         if x.IsA(UsdGeom.Mesh):
             found_meshes.append(x)
 
