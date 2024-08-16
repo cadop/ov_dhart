@@ -142,7 +142,7 @@ class DhartInterface():
         made_bvh = False 
    
         for prim in prims: 
-            if UsdGeom.Imageable(x).ComputeVisibility() == UsdGeom.Tokens.invisible:
+            if UsdGeom.Imageable(prim).ComputeVisibility() == UsdGeom.Tokens.invisible:
                 continue
             MI = self.convert_to_mesh(prim) 
             if MI is None:
