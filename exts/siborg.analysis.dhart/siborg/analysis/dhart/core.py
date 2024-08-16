@@ -142,6 +142,8 @@ class DhartInterface():
         made_bvh = False 
    
         for prim in prims: 
+            if UsdGeom.Imageable(x).ComputeVisibility() == UsdGeom.Tokens.invisible:
+                continue
             MI = self.convert_to_mesh(prim) 
             if MI is None:
                 print("BVH FAILED")
@@ -463,7 +465,7 @@ class DhartInterface():
         closest_nodes = self.graph.get_closest_nodes(p_desired)
 
         # Call the shortest path again, with the optional cost type
-        visibility_path = DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1], 'vg_all_cost')
+        visibility_path = pathfinding.DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1], 'vg_all_cost')
         path_xyz = np.take(self.nodes[['x','y','z']], visibility_path['id'])
         self.create_curve(path_xyz.tolist())
 
