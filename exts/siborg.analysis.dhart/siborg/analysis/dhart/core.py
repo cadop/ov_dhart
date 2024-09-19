@@ -1,3 +1,7 @@
+''' This is the core of the DHART interface. 
+It is responsible for interfacing with the DHART library and generating the graph and paths. 
+WARNING: Do not call this module! Use the dhart_handler to maintain reference'''
+
 from pxr import Usd, UsdGeom, UsdPhysics, UsdShade, Sdf, Gf, Tf, PhysxSchema, Vt
 
 try: 
@@ -6,6 +10,7 @@ except:
     from omni.usd import get_world_transform_matrix
 
 import omni.physx
+
 import numpy as np
 from scipy.interpolate import splprep, splev
 
@@ -27,14 +32,14 @@ from dhart.spatialstructures import Graph, Direction
 from . import usd_utils
 
 import time
-
 class DhartInterface():
 
     # Global class variable 
     active_selection = None 
-
+    
     def __init__(self):
-        
+
+        print(f'Running INIT on dhart interface')
         # BVH for DHART
         self.bvh = None
         self.vis_bvh = None # Separate BVH for storing opaque objects
@@ -46,19 +51,19 @@ class DhartInterface():
         # Selected Starting Location
         self.start_prim = None
         
-        self.node_size = 15
-        self.path_size = 20
+        self.node_size = 0.05
+        self.path_size = 0.1
 
         # Set 0 start
-        self.start_point = [0,0,0]
+        self.start_point = [0,0,0.5]
 
         # Set max nodes
         self.max_nodes = 400
 
-        self.grid_spacing = [20,20]
-        self.height = 80
-        self.upstep = 30
-        self.downstep = 30
+        self.grid_spacing = [0.1,0.1]
+        self.height = 1.60
+        self.upstep = 0.2
+        self.downstep = 0.2
         self.upslope = 20
         self.downslope = 20
 
@@ -69,6 +74,10 @@ class DhartInterface():
         # Track 
         self.gui_start = []
         self.gui_end = []
+
+        self._initialized = True
+
+
 
     def set_as_start(self):
         ''' Sets the DhartInterface.active_selection to the start prim '''
@@ -164,6 +173,32 @@ class DhartInterface():
                 else:
                     self.bvh.AddMesh(MI)
                     print('Added to BVH')
+
+        # for prim in prims:
+    
+        #     prim_type = prim.GetTypeName()
+        #     # Only add if its a mesh
+        #     if prim_type == 'Mesh':
+        #         MI = self.convert_to_mesh_old(prim)
+        #         # MI = self.convert_to_mesh(prim)
+        #         if MI is None:
+        #             print("BVH FAILED")
+        #             continue 
+        #         if not made_bvh:
+        #             if vis:
+        #                 self.vis_bvh = dhart.raytracer.EmbreeBVH(MI)
+        #                 print(f'VIS BVH is: {self.vis_bvh}')
+        #             else:
+        #                 self.bvh = dhart.raytracer.EmbreeBVH(MI)
+        #                 print(f'BVH is: {self.bvh}')
+        #             made_bvh = True 
+        #         else:
+        #             if vis:
+        #                 self.vis_bvh.AddMesh(MI)
+        #                 print('Added to VIS BVH')
+        #             else:
+        #                 self.bvh.AddMesh(MI)
+        #                 print('Added to BVH')
 
         # for prim in prims:
     
@@ -403,32 +438,6 @@ class DhartInterface():
         # Get the key
         energy_cost_key = CostAlgorithmKeys.ENERGY_EXPENDITURE
         CalculateEnergyExpenditure(self.graph)
-
-        self.reset_endpoints()
-        p_desired = np.array([self.start_point, self.end_point])
-        closest_nodes = self.graph.get_closest_nodes(p_desired)
-
-        # Call the shortest path again, with the optional cost type
-        energy_path = pathfinding.DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1], energy_cost_key)
-        path_xyz = np.take(self.nodes[['x','y','z']], energy_path['id'])
-        self.create_curve(path_xyz.tolist())
-
-        # As the cost array is numpy, simple operations to sum the total cost can be calculated
-        path_sum = np.sum(energy_path['cost_to_next'])
-        print('Total path cost: ', path_sum)
-
-    def get_visibility_path(self):
-
-        # make sure visibility graph was made
-        
-        # get node ids and attrs of vg
-        self.reset_endpoints()
-
-        # assign new node attrs for visibility
-        csr = self.graph.CompressToCSR()
-
-        # Get attribute scores from the graph
-        # out_attrs = self.graph.get_node_attributes(attr)
 
         self.graph.attrs_to_costs("vg_group", "vg_group_cost", Direction.INCOMING)
 

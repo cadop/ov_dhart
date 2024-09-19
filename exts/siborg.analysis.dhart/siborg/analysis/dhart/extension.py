@@ -1,9 +1,10 @@
 import omni.ext
 import omni.ui as ui
 
-from . import core
+# from . import core
 from . import render
 from . import window 
+from . import dhart_handler
 
 # Any class derived from `omni.ext.IExt` in top level module (defined in `python.modules` of `extension.toml`) will be
 # instantiated when extension gets enabled and `on_startup(ext_id)` will be called. Later when extension gets disabled
@@ -26,7 +27,8 @@ class DhartExtension(omni.ext.IExt):
 
     def initialize(self):
         ''' Initialization and any setup needed '''
-        self.DI = core.DhartInterface()
+        # self.DI = core.DhartInterface()
+        self.DI = dhart_handler.get_dhart()
 
         # ### Subscribe to events
         # self._usd_context = omni.usd.get_context()
@@ -61,9 +63,11 @@ class DhartExtension(omni.ext.IExt):
                 prim_selections.append(prim)
                 
         if prim_selections:
-            core.DhartInterface.active_selection = prim_selections
+            self.DI.DhartInterface.active_selection = prim_selections
             print(f'Set DI to {prim_selections}')
 
 
     def on_shutdown(self):
         print("[ov_dhart] DHART is shutting down")
+        self.DI = None
+        del self.DI
