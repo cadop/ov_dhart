@@ -75,8 +75,12 @@ class DhartInterface():
         self.gui_start = []
         self.gui_end = []
 
+        
+        self._current_attrs = {} # Current attributes of the graph, used to avoid contant string writing on graph
+        
         self._initialized = True
 
+        
 
 
     def set_as_start(self):
