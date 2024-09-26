@@ -2,6 +2,7 @@
 It is responsible for interfacing with the DHART library and generating the graph and paths. 
 WARNING: Do not call this module! Use the dhart_handler to maintain reference'''
 
+from collections import defaultdict
 from pxr import Usd, UsdGeom, UsdPhysics, UsdShade, Sdf, Gf, Tf, PhysxSchema, Vt
 
 try: 
@@ -76,8 +77,9 @@ class DhartInterface():
         self.gui_end = []
 
         
-        self._current_attrs = {} # Current attributes of the graph, used to avoid contant string writing on graph
-        
+        self._current_attrs = defaultdict(list)
+        self.graph_nodes = []
+        self.node_pnts = []        
         self._initialized = True
 
         
@@ -281,6 +283,8 @@ class DhartInterface():
         if self.graph:
             self.graph.CompressToCSR()
             self.nodes = self.graph.getNodes().array[['x','y','z']]
+            self.graph_nodes = self.graph.getNodes().array['id']
+            self.node_pnts = self.graph.get_node_points()
             print(f'Got {len(self.nodes)} Nodes')
         else:
             print("FAILED")
