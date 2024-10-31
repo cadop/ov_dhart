@@ -29,7 +29,7 @@ from dhart.visibilitygraph import VisibilityGraphGroupToGroup
 
 from dhart.spatialstructures.cost_algorithms import CalculateEnergyExpenditure, CostAlgorithmKeys
 from dhart.spatialstructures import Graph, Direction
-
+ 
 from . import usd_utils
 
 import time
@@ -81,9 +81,6 @@ class DhartInterface():
         self.graph_nodes = []
         self.node_pnts = []        
         self._initialized = True
-
-        
-
 
     def set_as_start(self):
         ''' Sets the DhartInterface.active_selection to the start prim '''
@@ -307,20 +304,28 @@ class DhartInterface():
         start_t = time.time()
 
         nodes_a = self.nodes # Define points as the graph nodes
+        print(f'Nodes A: {len(nodes_a)}')
         nodes_b = self.get_to_nodes()
 
         self.VG_group = VisibilityGraphGroupToGroup(self.vis_bvh, nodes_a, nodes_b, self.height) # Calculate the visibility graph
         if self.VG_group is None: 
             print('VG Failed')
             return 
+        
         # visibility_graph = VG.CompressToCSR() # Convert to a CSR (matrix)
         scores = self.VG_group.AggregateEdgeCosts(2, True) # Aggregate the visibility graph scores
-        scores = scores[:-len(nodes_b)] # remove b nodes
+        print(f'{len(scores)=}')
+
+        # self.score_vg(scores)
+        # return
+
+        # scores = scores[:-len(nodes_b)] # remove b nodes
         print(f'VG group time = {time.time()-start_t}')
 
         # add scores to node attributes
         attr = "vg_group"
         ids = self.graph.getNodes().array['id']
+        print(f'{len(ids)=}')
         str_scores = [str(1.0/(x+0.01)) for x in scores] # we need scores to be a string for dhart. was to encode any type of node data
         self.graph.add_node_attributes(attr, ids, str_scores)
 
@@ -387,7 +392,6 @@ class DhartInterface():
         self.create_curve(path_nodes)
         # self.show_nodes(path_xyz.tolist())
 
-
     def smooth_path(self, input_points):
         '''
         Interpolate the path and smooth the verts to be shown
@@ -441,12 +445,35 @@ class DhartInterface():
         color_primvar = prim.CreateDisplayColorPrimvar(UsdGeom.Tokens.constant)
         color_primvar.Set([(0,0,1)])
 
-
     def get_energy_path(self):
         # Get the key
         energy_cost_key = CostAlgorithmKeys.ENERGY_EXPENDITURE
         CalculateEnergyExpenditure(self.graph)
+        self.reset_endpoints()
+        p_desired = np.array([self.start_point, self.end_point])
+        closest_nodes = self.graph.get_closest_nodes(p_desired)
 
+        # Call the shortest path again, with the optional cost type
+        energy_path = pathfinding.DijkstraShortestPath(self.graph, closest_nodes[0], closest_nodes[1], energy_cost_key)
+        path_xyz = np.take(self.nodes[['x','y','z']], energy_path['id'])
+        self.create_curve(path_xyz.tolist())
+
+        # As the cost array is numpy, simple operations to sum the total cost can be calculated
+        path_sum = np.sum(energy_path['cost_to_next'])
+        print('Total path cost: ', path_sum)
+
+    def get_visibility_path(self):
+
+        # make sure visibility graph was made
+        
+        # get node ids and attrs of vg
+        self.reset_endpoints()
+
+        # assign new node attrs for visibility
+        csr = self.graph.CompressToCSR()
+
+        # Get attribute scores from the graph
+        # out_attrs = self.graph.get_node_attributes(attr)
         self.graph.attrs_to_costs("vg_group", "vg_group_cost", Direction.INCOMING)
 
         # self.graph.GetEdgeCost(1, 2, "vg_group_cost")
@@ -486,11 +513,9 @@ class DhartInterface():
         path_xyz = np.take(self.nodes[['x','y','z']], visibility_path['id'])
         self.create_curve(path_xyz.tolist())
 
-
     def scene_setup(self):
         # Get stage.
         self.stage = omni.usd.get_context().get_stage()
-
 
     def score_vg(self, scores):
 
