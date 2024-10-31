@@ -1,7 +1,7 @@
 import omni.ext
 import omni.ui as ui
 
-# from . import core
+from . import core
 from . import render
 from . import window 
 from . import dhart_handler
@@ -69,5 +69,6 @@ class DhartExtension(omni.ext.IExt):
 
     def on_shutdown(self):
         print("[ov_dhart] DHART is shutting down")
+        dhart_handler.remove_dhart()
         self.DI = None
         del self.DI
