@@ -12,3 +12,10 @@ def get_dhart():
 
 
     return getattr(main_module, 'dhart')
+
+def remove_dhart():
+    ''' Remove the dhart instance '''
+    main_module = sys.modules['__main__']
+    instance_name = 'dhart'
+    if hasattr(main_module, 'dhart'):
+        delattr(main_module, 'dhart')
